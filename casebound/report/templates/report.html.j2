@@ -107,8 +107,10 @@ footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 14px;
   {% for claim in accepted %}
   <div class="claim">
     <div class="statement">{{ claim.statement }}</div>
-    <div class="cites">Cited evidence:
-      {% for c in claim.citations %}<a href="#event-{{ c.id }}" class="mono">{{ c.short }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+    <div class="cites">Backing evidence:
+      <a href="#event-{{ claim.backing.id }}" class="mono">{{ claim.backing.short }}</a>
+      {% if claim.context_citations %}<span style="color:var(--muted);"> (also cited for context:
+        {% for c in claim.context_citations %}<a href="#event-{{ c.id }}" class="mono">{{ c.short }}</a>{% if not loop.last %}, {% endif %}{% endfor %})</span>{% endif %}
     </div>
   </div>
   {% endfor %}
@@ -183,8 +185,8 @@ footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 14px;
       <dt>action</dt><dd class="mono">{{ ev.action }}</dd>
       <dt>object</dt><dd class="mono">{{ ev.object }}</dd>
       <dt>source</dt><dd>{{ ev.source_tool }} / {{ ev.source_artifact }}</dd>
-      {% if ev.techniques %}
-      <dt>attack_techniques</dt><dd>{% for t in ev.techniques %}<span class="chip tech">{{ t.technique_id }}</span> <span style="color:var(--muted);font-size:11.5px;">({{ t.mapping_source }})</span>{% if not loop.last %} {% endif %}{% endfor %}</dd>
+      {% if ev.attack_techniques %}
+      <dt>attack_techniques</dt><dd>{% for t in ev.attack_techniques %}<span class="chip tech">{{ t.technique_id }}</span> <span style="color:var(--muted);font-size:11.5px;">({{ t.mapping_source }})</span>{% if not loop.last %} {% endif %}{% endfor %}</dd>
       {% endif %}
       {% if ev.details %}
       <dt>details</dt><dd>{% for k, v in ev.details %}<div><span style="color:var(--muted);">{{ k }}:</span> <span class="mono">{{ v }}</span></div>{% endfor %}</dd>

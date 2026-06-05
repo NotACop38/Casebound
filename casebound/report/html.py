@@ -82,11 +82,20 @@ def _verified_statement(claim: VerifiedClaim) -> str:
 
 
 def _claim_context(claim: VerifiedClaim) -> dict[str, Any]:
-    """Build the template context for one accepted claim, with citation links."""
+    """Build the template context for one accepted claim, with citation links.
+
+    The inline evidence link is the backing event: the single cited event the
+    verifier confirmed is consistent with every fact the claim asserts. Any other
+    citation resolves to a real event (the verifier requires that) but did not back
+    the checked facts, so it is rendered separately as context, never as the
+    evidence for the statement.
+    """
+    backing = claim.backing_event_id
+    context = [cid for cid in claim.citations if cid != backing]
     return {
         "statement": _verified_statement(claim),
-        "citations": [{"id": cid, "short": cid[:_SHORT_ID_LEN]} for cid in claim.citations],
-        "backing_event_id": claim.backing_event_id,
+        "backing": {"id": backing, "short": backing[:_SHORT_ID_LEN]},
+        "context_citations": [{"id": cid, "short": cid[:_SHORT_ID_LEN]} for cid in context],
     }
 
 

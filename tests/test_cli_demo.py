@@ -23,10 +23,14 @@ from casebound.cli import DEMO_REPORT_NAME, app, run_demo
 from casebound.verify import DraftRequest
 from typer.testing import CliRunner
 
+# A real event id from the office_intrusion scenario at the default seed: the
+# Word-spawned encoded PowerShell process-create event.
+PROCESS_CREATE_ID = "6fb28f7a4aa4868c10e5077dbc43226eb111bc824d953c347b6348a6c58e3c70"
+
 # The grounded claim from the bundled hallucination trap, against the default seed.
 GROUNDED_CLAIM: dict[str, Any] = {
     "text": "On WIN-ACCT-07, CORP\\jdoe ran an encoded PowerShell process spawned from Word.",
-    "citations": ["6fb28f7a4aa4868c10e5077dbc43226eb111bc824d953c347b6348a6c58e3c70"],
+    "citations": [PROCESS_CREATE_ID],
     "asserts": {
         "datetime": "2026-03-14T08:42:17Z",
         "principal": "CORP\\jdoe",
@@ -58,9 +62,8 @@ def test_demo_with_model_produces_a_verified_narrative(tmp_path: Path) -> None:
     assert "<!DOCTYPE html>" in html
     assert "<script" not in html
     # The verified narrative links its citation to the backing event in the appendix.
-    backing = GROUNDED_CLAIM["citations"][0]
-    assert f'href="#event-{backing}"' in html
-    assert f'id="event-{backing}"' in html
+    assert f'href="#event-{PROCESS_CREATE_ID}"' in html
+    assert f'id="event-{PROCESS_CREATE_ID}"' in html
 
 
 def test_demo_without_model_writes_deterministic_report(tmp_path: Path) -> None:

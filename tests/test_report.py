@@ -30,9 +30,11 @@ from casebound.normalize.schema import RawRef
 from casebound.report import NO_MODEL_LABEL, render_report
 from casebound.verify import DraftRequest, VerificationResult, verify_narrative
 
-# A real event id from the office_intrusion scenario at the default seed: the
-# Word-spawned encoded PowerShell process-create event.
+# Real event ids from the office_intrusion scenario at the default seed: the
+# Word-spawned encoded PowerShell process-create event, and the unrelated
+# lateral-movement network logon.
 PROCESS_CREATE_ID = "6fb28f7a4aa4868c10e5077dbc43226eb111bc824d953c347b6348a6c58e3c70"
+LATERAL_LOGON_ID = "4e959251e72c7f9c2bcf43acbcdf51ac69baf4542c49ff55e363316299b1da5e"
 
 
 class StubModel:
@@ -138,6 +140,47 @@ def test_rejected_claim_appears_in_the_audit_with_its_reason(tmp_path: Path) -> 
     # The audit section names the rejection reason and flags the drop.
     assert "principal_mismatch" in html
     assert "dropped" in html
+
+
+def test_appendix_shows_technique_id_and_mapping_source(tmp_path: Path) -> None:
+    # The appendix must render the structured ATT&CK tag for each tagged event,
+    # both the technique id and the mapping source, for audit. The scenario's tags
+    # come through as rule-tag passthrough, so that mapping source appears.
+    events = _events(tmp_path)
+    html = render_report(events, None, scenario="office_intrusion")
+
+    appendix = html.split('id="appendix"', 1)[1]
+    assert "rule_tag" in appendix
+    assert "T1059.001" in appendix
+
+
+def test_accepted_claim_links_backing_event_not_context_citation(tmp_path: Path) -> None:
+    # The claim cites the process-create event (which backs the asserted action)
+    # plus the unrelated logon event (which resolves but does not back the claim).
+    # The inline evidence link must be the backing event; the unrelated citation is
+    # shown only as context, never as the evidence for the statement.
+    events = _events(tmp_path)
+    model = StubModel(
+        _response(
+            {
+                "text": "An encoded PowerShell process was created from Word.",
+                "citations": [PROCESS_CREATE_ID, LATERAL_LOGON_ID],
+                "asserts": {"action": "process_create"},
+            }
+        )
+    )
+    result = verify_narrative(events, model)
+    assert len(result.accepted) == 1
+    assert result.accepted[0].backing_event_id == PROCESS_CREATE_ID
+
+    html = render_report(events, result, scenario="office_intrusion")
+    narrative = html.split('id="audit"', 1)[0]
+    # The backing event is the labeled evidence link.
+    assert "Backing evidence:" in narrative
+    assert f'href="#event-{PROCESS_CREATE_ID}"' in narrative
+    # The unrelated citation appears only under the context label, not as evidence.
+    assert "also cited for context" in narrative
+    assert f'href="#event-{LATERAL_LOGON_ID}"' in narrative
 
 
 def test_no_model_path_renders_deterministic_report_and_says_so(tmp_path: Path) -> None:

@@ -42,9 +42,11 @@ from casebound.verify import (
 # seed so its hardcoded event ids match the scenario the test regenerates.
 TRAP_PATH = Path(__file__).resolve().parents[1] / "samples" / "hallucination_trap.json"
 
-# A real event id from the office_intrusion scenario at the default seed: the
-# Word-spawned encoded PowerShell process-create event.
+# Real event ids from the office_intrusion scenario at the default seed: the
+# Word-spawned encoded PowerShell process-create event, and the lateral-movement
+# network logon.
 PROCESS_CREATE_ID = "6fb28f7a4aa4868c10e5077dbc43226eb111bc824d953c347b6348a6c58e3c70"
+LATERAL_LOGON_ID = "4e959251e72c7f9c2bcf43acbcdf51ac69baf4542c49ff55e363316299b1da5e"
 
 
 class StubModel:
@@ -392,3 +394,138 @@ def test_hallucination_trap_rejects_every_fabricated_claim(tmp_path: Path) -> No
 
     rejection_rate = rejected / len(fabricated)
     assert rejection_rate == 1.0
+
+
+# 7. Citations on an accepted claim must all resolve (no unverified links reach the
+#    report). Regression for the multi-citation hole.
+
+
+def test_unresolved_extra_citation_rejects_the_whole_claim(tmp_path: Path) -> None:
+    # One valid backing event plus a well-formed but nonexistent id. The claim must
+    # not be accepted with a citation that links to nothing.
+    events = _events(tmp_path)
+    fake_id = "deadbeef" * 8
+    model = StubModel(
+        [
+            _response(
+                {
+                    "text": "An encoded PowerShell process was created from Word.",
+                    "citations": [PROCESS_CREATE_ID, fake_id],
+                    "asserts": {"action": "process_create"},
+                }
+            )
+        ]
+    )
+    result = verify_narrative(events, model)
+    assert result.accepted == ()
+    assert result.dropped[0].reason is RejectionReason.MISSING_ID
+
+
+def test_malformed_extra_citation_rejects_the_whole_claim(tmp_path: Path) -> None:
+    events = _events(tmp_path)
+    model = StubModel(
+        [
+            _response(
+                {
+                    "text": "An encoded PowerShell process was created from Word.",
+                    "citations": [PROCESS_CREATE_ID, "EVENT-80038"],
+                    "asserts": {"action": "process_create"},
+                }
+            )
+        ]
+    )
+    result = verify_narrative(events, model)
+    assert result.accepted == ()
+    assert result.dropped[0].reason is RejectionReason.MALFORMED_CITATION
+
+
+# 8. The report content is rendered from checked fields only: prose cannot smuggle
+#    an unverified fact into the report.
+
+
+def test_accepted_claim_renders_only_verified_fields_not_prose(tmp_path: Path) -> None:
+    # The prose attributes the process to the domain administrator, but the claim
+    # only asserts (and the verifier only checks) the action. The accepted claim
+    # must not carry the administrator as a verified fact, and the rendered
+    # statement must contain no fact beyond the checked assertion.
+    events = _events(tmp_path)
+    model = StubModel(
+        [
+            _response(
+                {
+                    "text": "The domain administrator spawned the encoded PowerShell process.",
+                    "citations": [PROCESS_CREATE_ID],
+                    "asserts": {"action": "process_create"},
+                }
+            )
+        ]
+    )
+    result = verify_narrative(events, model)
+
+    assert len(result.accepted) == 1
+    claim = result.accepted[0]
+    # Only the checked field is authoritative; the smuggled principal is not.
+    assert claim.asserts.action == "process_create"
+    assert claim.asserts.principal is None
+    statement = claim.rendered_statement()
+    assert "administrator" not in statement.lower()
+    assert "process_create" in statement
+    # The model's prose is retained for the audit but flagged non-authoritative.
+    assert "administrator" in claim.draft_text.lower()
+
+
+# 9. The loop never silently loses an unsupported claim during revision (FR24, FR25).
+
+
+def test_claim_omitted_during_revision_is_recorded_as_dropped(tmp_path: Path) -> None:
+    events = _events(tmp_path)
+    # Round 0 returns two bad claims; round 1 fixes only the first and omits the
+    # second; round 2 is empty. The omitted claim must be dropped and recorded.
+    bad_principal = {
+        "text": "The administrator spawned the PowerShell process.",
+        "citations": [PROCESS_CREATE_ID],
+        "asserts": {"principal": "CORP\\Administrator", "action": "process_create"},
+    }
+    bad_action = {
+        "text": "CORP\\svc-backup created a process during the network logon.",
+        "citations": [LATERAL_LOGON_ID],
+        "asserts": {"action": "process_create"},
+    }
+    fixed_principal = {
+        "text": "CORP\\jdoe spawned the PowerShell process from Word.",
+        "citations": [PROCESS_CREATE_ID],
+        "asserts": {"principal": "CORP\\jdoe", "action": "process_create"},
+    }
+    model = StubModel(
+        [
+            _response(bad_principal, bad_action),
+            _response(fixed_principal),  # omits the second claim
+            _response(),  # nothing further
+        ]
+    )
+    result = verify_narrative(events, model, max_rounds=2)
+
+    assert len(result.accepted) == 1
+    assert result.accepted[0].asserts.principal == "CORP\\jdoe"
+    # The omitted second claim is dropped and recorded, not silently lost.
+    assert len(result.dropped) == 1
+    assert result.dropped[0].reason is RejectionReason.ACTION_MISMATCH
+    assert "svc-backup" in result.dropped[0].claim_text
+
+
+def test_unparseable_revision_drops_outstanding_claim(tmp_path: Path) -> None:
+    events = _events(tmp_path)
+    bad = _response(
+        {
+            "text": "The administrator spawned the PowerShell process.",
+            "citations": [PROCESS_CREATE_ID],
+            "asserts": {"principal": "CORP\\Administrator"},
+        }
+    )
+    model = StubModel([bad, "garbage, not json"])
+    result = verify_narrative(events, model, max_rounds=1)
+
+    assert result.accepted == ()
+    # The outstanding claim is not lost when the revision round is unparseable.
+    assert len(result.dropped) == 1
+    assert result.dropped[0].reason is RejectionReason.PRINCIPAL_MISMATCH

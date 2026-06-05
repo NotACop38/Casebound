@@ -1,0 +1,19 @@
+# Pre-commit hooks for Casebound. Mirrors the local CI gate (scripts/ci.py).
+# Install with: pre-commit install
+minimum_pre_commit_version: "3.5.0"
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.8
+    hooks:
+      - id: ruff
+        name: ruff (lint)
+        args: ["--fix"]
+      - id: ruff-format
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        name: detect-secrets (secret scan)
+        args: ["--baseline", ".secrets.baseline"]

@@ -1,0 +1,234 @@
+{
+  "scenario": "office_intrusion",
+  "description": "A multi-stage host intrusion: a phishing macro spawns PowerShell, which pulls a stager, persists via a Run key and a scheduled task, reads LSASS, moves laterally to a file server via a network logon and a remote service, then archives and exfiltrates collected data to an external host.",
+  "version": "0.1",
+  "seed": 1337,
+  "source_csv": "synthetic_hayabusa.csv",
+  "source_tool": "hayabusa",
+  "output_timezone": "America/New_York",
+  "hosts": [
+    "WIN-ACCT-07",
+    "WIN-FILE-02"
+  ],
+  "principals": [
+    "CORP\\jdoe",
+    "CORP\\svc-backup"
+  ],
+  "stages": [
+    "collection",
+    "command_and_control",
+    "credential_access",
+    "exfiltration",
+    "initial_access",
+    "lateral_movement",
+    "persistence"
+  ],
+  "techniques": [
+    "T1003.001",
+    "T1021.002",
+    "T1041",
+    "T1053.005",
+    "T1059.001",
+    "T1071.001",
+    "T1105",
+    "T1543.003",
+    "T1547.001",
+    "T1560.001",
+    "T1566.001",
+    "T1569.002"
+  ],
+  "iocs": {
+    "ips": [
+      "10.4.12.66",
+      "10.4.12.40",
+      "203.0.113.77"
+    ],
+    "domains": [
+      "sync-update.example"
+    ],
+    "files": [
+      "C:\\Users\\jdoe\\AppData\\Roaming\\Microsoft\\Windows\\updater.exe",
+      "C:\\Windows\\Temp\\winhelpsvc.exe",
+      "C:\\Windows\\Temp\\backup.7z"
+    ],
+    "hashes": [
+      "41686f19468fec28c13d66d2dcc6b15173dd30dd45b7b488baa3119cdcdf7ec3",
+      "ea1e4c4a16224599d48129c157dbd0d760b49df6d95ae0f3925ba07a502a0fe7"
+    ]
+  },
+  "event_count": 9,
+  "events": [
+    {
+      "label_id": "ia-office-spawn-powershell",
+      "stage": "initial_access",
+      "record_id": "80038",
+      "timestamp_utc": "2026-03-14T08:42:17Z",
+      "computer": "WIN-ACCT-07",
+      "principal": "CORP\\jdoe",
+      "action": "process_create",
+      "object": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "technique_ids": [
+        "T1566.001",
+        "T1059.001"
+      ],
+      "mitre_tactics": [
+        "Initial Access",
+        "Execution"
+      ],
+      "rule_title": "Office Application Spawned PowerShell (Possible Phishing Macro)",
+      "message": "winword.exe spawned powershell.exe with an encoded command"
+    },
+    {
+      "label_id": "c2-stager-download",
+      "stage": "command_and_control",
+      "record_id": "80114",
+      "timestamp_utc": "2026-03-14T08:43:05Z",
+      "computer": "WIN-ACCT-07",
+      "principal": "CORP\\jdoe",
+      "action": "network_connect",
+      "object": "sync-update.example:443",
+      "technique_ids": [
+        "T1071.001",
+        "T1105"
+      ],
+      "mitre_tactics": [
+        "Command and Control"
+      ],
+      "rule_title": "PowerShell Network Connection to Rare External Host",
+      "message": "powershell.exe connected to sync-update.example to retrieve a stager"
+    },
+    {
+      "label_id": "persist-run-key",
+      "stage": "persistence",
+      "record_id": "80191",
+      "timestamp_utc": "2026-03-14T08:44:30Z",
+      "computer": "WIN-ACCT-07",
+      "principal": "CORP\\jdoe",
+      "action": "registry_set",
+      "object": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Updater",
+      "technique_ids": [
+        "T1547.001"
+      ],
+      "mitre_tactics": [
+        "Persistence",
+        "Privilege Escalation"
+      ],
+      "rule_title": "Autorun Registry Run Key Set to User AppData Executable",
+      "message": "Run key Updater set to launch the implant at logon"
+    },
+    {
+      "label_id": "persist-scheduled-task",
+      "stage": "persistence",
+      "record_id": "80287",
+      "timestamp_utc": "2026-03-14T08:45:10Z",
+      "computer": "WIN-ACCT-07",
+      "principal": "CORP\\jdoe",
+      "action": "scheduled_task_create",
+      "object": "\\MicrosoftUpdaterTask",
+      "technique_ids": [
+        "T1053.005"
+      ],
+      "mitre_tactics": [
+        "Persistence",
+        "Privilege Escalation",
+        "Execution"
+      ],
+      "rule_title": "Scheduled Task Created Pointing at User AppData Executable",
+      "message": "Scheduled task MicrosoftUpdaterTask created to run the implant"
+    },
+    {
+      "label_id": "cred-lsass-access",
+      "stage": "credential_access",
+      "record_id": "80311",
+      "timestamp_utc": "2026-03-14T08:48:22Z",
+      "computer": "WIN-ACCT-07",
+      "principal": "CORP\\jdoe",
+      "action": "process_access",
+      "object": "C:\\Windows\\System32\\lsass.exe",
+      "technique_ids": [
+        "T1003.001"
+      ],
+      "mitre_tactics": [
+        "Credential Access"
+      ],
+      "rule_title": "LSASS Memory Access from Unsigned Process",
+      "message": "updater.exe opened lsass.exe with memory-read access"
+    },
+    {
+      "label_id": "lateral-network-logon",
+      "stage": "lateral_movement",
+      "record_id": "80356",
+      "timestamp_utc": "2026-03-14T08:55:03Z",
+      "computer": "WIN-FILE-02",
+      "principal": "CORP\\svc-backup",
+      "action": "logon",
+      "object": "10.4.12.66",
+      "technique_ids": [
+        "T1021.002"
+      ],
+      "mitre_tactics": [
+        "Lateral Movement"
+      ],
+      "rule_title": "Network Logon with Stolen Service Account Credentials",
+      "message": "Network logon for CORP\\svc-backup on WIN-FILE-02 from 10.4.12.66"
+    },
+    {
+      "label_id": "lateral-remote-service",
+      "stage": "lateral_movement",
+      "record_id": "80408",
+      "timestamp_utc": "2026-03-14T08:56:40Z",
+      "computer": "WIN-FILE-02",
+      "principal": "CORP\\svc-backup",
+      "action": "service_install",
+      "object": "WinHelpSvc",
+      "technique_ids": [
+        "T1021.002",
+        "T1543.003",
+        "T1569.002"
+      ],
+      "mitre_tactics": [
+        "Lateral Movement",
+        "Execution",
+        "Persistence"
+      ],
+      "rule_title": "Service Installed from World-Writable Temp Path",
+      "message": "Service WinHelpSvc installed on WIN-FILE-02 from a Temp path"
+    },
+    {
+      "label_id": "collect-archive",
+      "stage": "collection",
+      "record_id": "80541",
+      "timestamp_utc": "2026-03-14T09:02:15Z",
+      "computer": "WIN-FILE-02",
+      "principal": "CORP\\svc-backup",
+      "action": "process_create",
+      "object": "C:\\Windows\\Temp\\backup.7z",
+      "technique_ids": [
+        "T1560.001"
+      ],
+      "mitre_tactics": [
+        "Collection"
+      ],
+      "rule_title": "Archive Utility Compressing Share Contents to Temp",
+      "message": "7z.exe archived collected files into C:\\Windows\\Temp\\backup.7z"
+    },
+    {
+      "label_id": "exfil-outbound",
+      "stage": "exfiltration",
+      "record_id": "80583",
+      "timestamp_utc": "2026-03-14T09:08:47Z",
+      "computer": "WIN-FILE-02",
+      "principal": "CORP\\svc-backup",
+      "action": "network_connect",
+      "object": "203.0.113.77:443",
+      "technique_ids": [
+        "T1041"
+      ],
+      "mitre_tactics": [
+        "Exfiltration"
+      ],
+      "rule_title": "Large Outbound Transfer to Rare External Host",
+      "message": "Outbound connection from WIN-FILE-02 to 203.0.113.77 carrying the archive"
+    }
+  ]
+}

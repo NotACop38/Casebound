@@ -1,0 +1,37 @@
+{
+  "event_id": "4e959251e72c7f9c2bcf43acbcdf51ac69baf4542c49ff55e363316299b1da5e",
+  "datetime": "2026-03-14T08:55:03Z",
+  "timestamp_raw": "03/14/2026 04:55:03 AM",
+  "source_timezone": "America/New_York",
+  "timestamp_desc": "logged",
+  "message": "Successful network logon for CORP\\svc-backup from 10.4.12.66",
+  "host": "WIN-FILE-02",
+  "principal": "CORP\\svc-backup",
+  "action": "logon",
+  "object": "10.4.12.66",
+  "source_tool": "hayabusa",
+  "source_artifact": "Security.evtx",
+  "details": {
+    "logon_type": 3,
+    "event_id": 4624,
+    "source_ip": "10.4.12.66",
+    "authentication_package": "NTLM"
+  },
+  "attack_techniques": [
+    {
+      "technique_id": "T1021.002",
+      "mapping_source": "mapping_table"
+    }
+  ],
+  "ioc_refs": [
+    "ioc-0003"
+  ],
+  "confidence": 0.9,
+  "raw_ref": {
+    "source_file": "hayabusa-timeline.csv",
+    "record": "1623"
+  },
+  "tags": [
+    "episode-lateral-movement"
+  ]
+}

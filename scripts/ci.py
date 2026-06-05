@@ -34,6 +34,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = ROOT / "schema" / "event.schema.json"
+SCHEMA_EXAMPLES_DIR = ROOT / "schema" / "examples"
 BASELINE = ROOT / ".secrets.baseline"
 PYPROJECT = ROOT / "pyproject.toml"
 
@@ -76,7 +77,12 @@ def run_cmd(name: str, cmd: list[str]) -> bool:
 
 
 def check_schema() -> bool:
-    """Validate the canonical event schema if present, else skip (placeholder)."""
+    """Validate the canonical event schema and every committed example against it.
+
+    First confirms the schema document is itself a valid JSON Schema, then loads
+    every instance under schema/examples/ and validates it against the schema, so
+    the keystone record and its worked examples can never drift apart silently.
+    """
     _print_header("schema (JSON Schema validation)")
     if not SCHEMA_PATH.exists():
         print(f"SKIP: {SCHEMA_PATH.relative_to(ROOT)} not present yet (placeholder).")
@@ -89,7 +95,18 @@ def check_schema() -> bool:
     except Exception as exc:  # report any schema problem as a failure
         print(f"FAIL: {SCHEMA_PATH.relative_to(ROOT)} is not a valid JSON Schema: {exc}")
         return False
-    print("PASS")
+
+    validator = Draft202012Validator(schema)
+    examples = sorted(SCHEMA_EXAMPLES_DIR.glob("*.json")) if SCHEMA_EXAMPLES_DIR.exists() else []
+    for example in examples:
+        try:
+            instance = json.loads(example.read_text(encoding="utf-8"))
+            validator.validate(instance)
+        except Exception as exc:  # a non-conforming example is a failure
+            print(f"FAIL: {example.relative_to(ROOT)} does not validate: {exc}")
+            return False
+
+    print(f"PASS ({len(examples)} example(s) validated)")
     return True
 
 

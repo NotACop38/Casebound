@@ -1,0 +1,249 @@
+{
+  "source_file": "hayabusa_slice.csv",
+  "event_count": 6,
+  "events": [
+    {
+      "event_id": "785a7c086b1fa04003a3995d5d5cf429247e9dea18847fc09b6f77b1fcb98bd3",
+      "datetime": "2026-03-14T08:30:05Z",
+      "timestamp_raw": "2026-03-14 04:30:05.000 -04:00",
+      "source_timezone": "UTC-04:00",
+      "timestamp_desc": "logged",
+      "message": "Successful Interactive Logon",
+      "host": "WIN-ACCT-07",
+      "principal": "CORP\\jdoe",
+      "action": "logon",
+      "object": null,
+      "source_tool": "hayabusa",
+      "source_artifact": "Security.evtx",
+      "details": {
+        "win_event_id": 4624,
+        "channel": "Security",
+        "fields": {
+          "LogonType": "2",
+          "TargetUserName": "jdoe",
+          "TargetDomainName": "CORP",
+          "WorkstationName": "WIN-ACCT-07"
+        },
+        "level": "info",
+        "rule_title": "Successful Interactive Logon"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "hayabusa_slice.csv",
+        "record": "79989"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "6fb28f7a4aa4868c10e5077dbc43226eb111bc824d953c347b6348a6c58e3c70",
+      "datetime": "2026-03-14T08:42:17Z",
+      "timestamp_raw": "2026-03-14 04:42:17.000 -04:00",
+      "source_timezone": "UTC-04:00",
+      "timestamp_desc": "logged",
+      "message": "Office Application Spawned PowerShell (Possible Phishing Macro)",
+      "host": "WIN-ACCT-07",
+      "principal": "CORP\\jdoe",
+      "action": "process_create",
+      "object": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "source_tool": "hayabusa",
+      "source_artifact": "Security.evtx",
+      "details": {
+        "win_event_id": 4688,
+        "channel": "Security",
+        "fields": {
+          "NewProcessName": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+          "ParentProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+          "CommandLine": "powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQA",
+          "SubjectUserName": "jdoe",
+          "SubjectDomainName": "CORP"
+        },
+        "level": "high",
+        "rule_title": "Office Application Spawned PowerShell (Possible Phishing Macro)",
+        "mitre_tactics": [
+          "Initial Access",
+          "Execution"
+        ],
+        "rule_mitre_tags": [
+          "T1566.001",
+          "T1059.001"
+        ]
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "hayabusa_slice.csv",
+        "record": "80038"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "e2f411cf5daf01f783036c239ddb9bd9f28a456643194570786f247207626324",
+      "datetime": "2026-03-14T08:43:05Z",
+      "timestamp_raw": "2026-03-14 04:43:05.000 -04:00",
+      "source_timezone": "UTC-04:00",
+      "timestamp_desc": "logged",
+      "message": "PowerShell Network Connection to Rare External Host",
+      "host": "WIN-ACCT-07",
+      "principal": null,
+      "action": "network_connect",
+      "object": "203.0.113.77:443",
+      "source_tool": "hayabusa",
+      "source_artifact": "Microsoft-Windows-Sysmon%4Operational.evtx",
+      "details": {
+        "win_event_id": 3,
+        "channel": "Microsoft-Windows-Sysmon/Operational",
+        "fields": {
+          "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+          "DestinationHostname": "sync-update.example",
+          "DestinationIp": "203.0.113.77",
+          "DestinationPort": "443",
+          "Protocol": "tcp"
+        },
+        "level": "high",
+        "rule_title": "PowerShell Network Connection to Rare External Host",
+        "mitre_tactics": [
+          "Command and Control"
+        ],
+        "rule_mitre_tags": [
+          "T1071.001",
+          "T1105"
+        ]
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "hayabusa_slice.csv",
+        "record": "80114"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "051b0e61b95a86aff2cfdd647a10028067b6308d2b49f54899fcc9b01f78834f",
+      "datetime": "2026-03-14T08:44:30Z",
+      "timestamp_raw": "2026-03-14 04:44:30.000 -04:00",
+      "source_timezone": "UTC-04:00",
+      "timestamp_desc": "logged",
+      "message": "Autorun Registry Run Key Set to User AppData Executable",
+      "host": "WIN-ACCT-07",
+      "principal": null,
+      "action": "registry_set",
+      "object": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Updater",
+      "source_tool": "hayabusa",
+      "source_artifact": "Microsoft-Windows-Sysmon%4Operational.evtx",
+      "details": {
+        "win_event_id": 13,
+        "channel": "Microsoft-Windows-Sysmon/Operational",
+        "fields": {
+          "EventType": "SetValue",
+          "TargetObject": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Updater",
+          "Image": "C:\\Windows\\System32\\reg.exe",
+          "Details": "C:\\Users\\jdoe\\AppData\\Roaming\\Microsoft\\Windows\\updater.exe"
+        },
+        "level": "high",
+        "rule_title": "Autorun Registry Run Key Set to User AppData Executable",
+        "mitre_tactics": [
+          "Persistence",
+          "Privilege Escalation"
+        ],
+        "rule_mitre_tags": [
+          "T1547.001"
+        ]
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "hayabusa_slice.csv",
+        "record": "80191"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "4e959251e72c7f9c2bcf43acbcdf51ac69baf4542c49ff55e363316299b1da5e",
+      "datetime": "2026-03-14T08:55:03Z",
+      "timestamp_raw": "2026-03-14 04:55:03.000 -04:00",
+      "source_timezone": "UTC-04:00",
+      "timestamp_desc": "logged",
+      "message": "Network Logon with Stolen Service Account Credentials",
+      "host": "WIN-FILE-02",
+      "principal": "CORP\\svc-backup",
+      "action": "logon",
+      "object": "10.4.12.66",
+      "source_tool": "hayabusa",
+      "source_artifact": "Security.evtx",
+      "details": {
+        "win_event_id": 4624,
+        "channel": "Security",
+        "fields": {
+          "LogonType": "3",
+          "TargetUserName": "svc-backup",
+          "TargetDomainName": "CORP",
+          "IpAddress": "10.4.12.66",
+          "AuthenticationPackageName": "NTLM"
+        },
+        "level": "high",
+        "rule_title": "Network Logon with Stolen Service Account Credentials",
+        "mitre_tactics": [
+          "Lateral Movement"
+        ],
+        "rule_mitre_tags": [
+          "T1078.002"
+        ]
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "hayabusa_slice.csv",
+        "record": "80356"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "88faf82933ec4112dea366109019cecf2e3ed75aadbfd0fa0a887d012036c550",
+      "datetime": "2026-03-14T08:56:40Z",
+      "timestamp_raw": "2026-03-14 04:56:40.000 -04:00",
+      "source_timezone": "UTC-04:00",
+      "timestamp_desc": "logged",
+      "message": "Service Installed from World-Writable Temp Path",
+      "host": "WIN-FILE-02",
+      "principal": null,
+      "action": "service_install",
+      "object": "WinHelpSvc",
+      "source_tool": "hayabusa",
+      "source_artifact": "System.evtx",
+      "details": {
+        "win_event_id": 7045,
+        "channel": "System",
+        "fields": {
+          "ServiceName": "WinHelpSvc",
+          "ImagePath": "C:\\Windows\\Temp\\winhelpsvc.exe",
+          "ServiceType": "user mode service",
+          "StartType": "auto start",
+          "Hashes": "SHA256=41686f19468fec28c13d66d2dcc6b15173dd30dd45b7b488baa3119cdcdf7ec3"
+        },
+        "level": "crit",
+        "rule_title": "Service Installed from World-Writable Temp Path",
+        "mitre_tactics": [
+          "Persistence",
+          "Privilege Escalation"
+        ],
+        "rule_mitre_tags": [
+          "T1543.003"
+        ]
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "hayabusa_slice.csv",
+        "record": "80492"
+      },
+      "tags": []
+    }
+  ]
+}

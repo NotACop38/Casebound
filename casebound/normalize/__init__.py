@@ -4,11 +4,31 @@ This module owns the keystone schema, the per-source field mappers, UTC timezone
 normalization with source-timezone tracking, stable content-derived event ids, and
 provenance preservation (FR8 to FR12).
 
-Planned layout (PRD Section 13): schema.py, timezone.py, mappers/.
+Layout (PRD Section 13):
+  - ``schema``   : the canonical event record and its validation (the keystone).
+  - ``timezone`` : timestamp normalization to UTC with source-timezone tracking.
+  - ``mappers``  : per-source field mappers (Hayabusa is the first).
+  - ``pipeline`` : raw records to de-duplicated canonical events.
 
-TODO(Phase 0): the validation source of truth is schema/event.schema.json.
-TODO(Phase 1): implement normalization to the canonical schema with UTC handling
-  and stable event ids.
+The validation source of truth is ``schema/event.schema.json``.
 """
 
 from __future__ import annotations
+
+from casebound.normalize.pipeline import (
+    NormalizationProblem,
+    NormalizationResult,
+    normalize_records,
+)
+from casebound.normalize.schema import Event, RawRef
+from casebound.normalize.timezone import NormalizedTimestamp, normalize_timestamp
+
+__all__ = [
+    "Event",
+    "NormalizationProblem",
+    "NormalizationResult",
+    "NormalizedTimestamp",
+    "RawRef",
+    "normalize_records",
+    "normalize_timestamp",
+]

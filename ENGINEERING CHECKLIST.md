@@ -14,9 +14,9 @@ Exit criteria: schema v0.1 committed and validating; repo skeleton builds; pytes
 
 - [ ] [D] Confirm blocking decisions: D1 name, D2 license, D3 CI convention. (D4 and D5 can wait.)
 - [ ] [D] Sign off the canonical event schema v0.1 field set (PRD Section 10).
-- [ ] [A] Scaffold the package per PRD Section 13 (modules as empty-but-importable), pyproject.toml with pinned deps, LICENSE per D2, .gitignore, .env.example, Makefile, ruff and mypy config, pre-commit, README stub.
+- [x] [A] Scaffold the package per PRD Section 13 (modules as empty-but-importable), pyproject.toml with pinned deps, LICENSE per D2, .gitignore, .env.example, Makefile, ruff and mypy config, pre-commit, README stub.
 - [ ] [A] Write schema/event.schema.json (JSON Schema) from PRD Section 10, plus docs/schema.md with two worked examples.
-- [ ] [A] Add a trivial passing test so the harness is green from day one.
+- [x] [A] Add a trivial passing test so the harness is green from day one.
 
 ## Phase 1 - Vertical slice (tracer bullet)
 

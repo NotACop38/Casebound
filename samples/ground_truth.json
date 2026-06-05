@@ -30,12 +30,12 @@
     "T1053.005",
     "T1059.001",
     "T1071.001",
+    "T1078.002",
     "T1105",
     "T1543.003",
     "T1547.001",
     "T1560.001",
-    "T1566.001",
-    "T1569.002"
+    "T1566.001"
   ],
   "iocs": {
     "ips": [
@@ -52,11 +52,10 @@
       "C:\\Windows\\Temp\\backup.7z"
     ],
     "hashes": [
-      "41686f19468fec28c13d66d2dcc6b15173dd30dd45b7b488baa3119cdcdf7ec3",
-      "ea1e4c4a16224599d48129c157dbd0d760b49df6d95ae0f3925ba07a502a0fe7"
+      "41686f19468fec28c13d66d2dcc6b15173dd30dd45b7b488baa3119cdcdf7ec3"
     ]
   },
-  "event_count": 9,
+  "event_count": 10,
   "events": [
     {
       "label_id": "ia-office-spawn-powershell",
@@ -164,7 +163,7 @@
       "action": "logon",
       "object": "10.4.12.66",
       "technique_ids": [
-        "T1021.002"
+        "T1078.002"
       ],
       "mitre_tactics": [
         "Lateral Movement"
@@ -173,23 +172,38 @@
       "message": "Network logon for CORP\\svc-backup on WIN-FILE-02 from 10.4.12.66"
     },
     {
-      "label_id": "lateral-remote-service",
+      "label_id": "lateral-admin-share",
       "stage": "lateral_movement",
       "record_id": "80408",
+      "timestamp_utc": "2026-03-14T08:55:23Z",
+      "computer": "WIN-FILE-02",
+      "principal": "CORP\\svc-backup",
+      "action": "network_share_access",
+      "object": "\\\\WIN-FILE-02\\ADMIN$",
+      "technique_ids": [
+        "T1021.002"
+      ],
+      "mitre_tactics": [
+        "Lateral Movement"
+      ],
+      "rule_title": "Administrative Share Access from Remote Host",
+      "message": "ADMIN$ share on WIN-FILE-02 accessed by CORP\\svc-backup from 10.4.12.66"
+    },
+    {
+      "label_id": "lateral-remote-service",
+      "stage": "lateral_movement",
+      "record_id": "80492",
       "timestamp_utc": "2026-03-14T08:56:40Z",
       "computer": "WIN-FILE-02",
       "principal": "CORP\\svc-backup",
       "action": "service_install",
       "object": "WinHelpSvc",
       "technique_ids": [
-        "T1021.002",
-        "T1543.003",
-        "T1569.002"
+        "T1543.003"
       ],
       "mitre_tactics": [
-        "Lateral Movement",
-        "Execution",
-        "Persistence"
+        "Persistence",
+        "Privilege Escalation"
       ],
       "rule_title": "Service Installed from World-Writable Temp Path",
       "message": "Service WinHelpSvc installed on WIN-FILE-02 from a Temp path"
@@ -197,7 +211,7 @@
     {
       "label_id": "collect-archive",
       "stage": "collection",
-      "record_id": "80541",
+      "record_id": "80583",
       "timestamp_utc": "2026-03-14T09:02:15Z",
       "computer": "WIN-FILE-02",
       "principal": "CORP\\svc-backup",
@@ -215,7 +229,7 @@
     {
       "label_id": "exfil-outbound",
       "stage": "exfiltration",
-      "record_id": "80583",
+      "record_id": "80636",
       "timestamp_utc": "2026-03-14T09:08:47Z",
       "computer": "WIN-FILE-02",
       "principal": "CORP\\svc-backup",

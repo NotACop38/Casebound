@@ -288,7 +288,9 @@ _EVENTS: tuple[ScenarioEvent, ...] = (
             ("CallTrace", "C:\\Windows\\System32\\ntdll.dll+9d2e4"),
         ),
     ),
-    # 5a. Lateral movement: a network logon to the file server.
+    # 5a. Lateral movement: a network logon to the file server with a stolen
+    # domain service account. The bare 4624 evidences valid-account reuse, not a
+    # specific remote-service protocol, so it is labeled Valid Accounts.
     ScenarioEvent(
         label_id="lateral-network-logon",
         stage="lateral_movement",
@@ -303,7 +305,7 @@ _EVENTS: tuple[ScenarioEvent, ...] = (
         object=_WS_IP,
         message=f"Network logon for {_SVC} on {_SERVER} from {_WS_IP}",
         mitre_tactics=("Lateral Movement",),
-        technique_ids=("T1021.002",),
+        technique_ids=("T1078.002",),
         details=(
             ("LogonType", "3"),
             ("TargetUserName", "svc-backup"),
@@ -312,7 +314,35 @@ _EVENTS: tuple[ScenarioEvent, ...] = (
             ("AuthenticationPackageName", "NTLM"),
         ),
     ),
-    # 5b. Lateral movement: a remote service install on the file server.
+    # 5b. Lateral movement: the admin share is mounted from the workstation. The
+    # ADMIN$ share name in this 5140 is the concrete evidence for SMB/Admin
+    # Shares, which a bare network logon cannot establish on its own.
+    ScenarioEvent(
+        label_id="lateral-admin-share",
+        stage="lateral_movement",
+        offset_seconds=786,  # 08:55:23Z
+        computer=_SERVER,
+        channel="Security",
+        win_event_id=5140,
+        level="high",
+        rule_title="Administrative Share Access from Remote Host",
+        principal=_SVC,
+        action="network_share_access",
+        object=f"\\\\{_SERVER}\\ADMIN$",
+        message=f"ADMIN$ share on {_SERVER} accessed by {_SVC} from {_WS_IP}",
+        mitre_tactics=("Lateral Movement",),
+        technique_ids=("T1021.002",),
+        details=(
+            ("ShareName", "\\\\*\\ADMIN$"),
+            ("ShareLocalPath", "C:\\Windows"),
+            ("SubjectUserName", "svc-backup"),
+            ("IpAddress", _WS_IP),
+            ("AccessMask", "0x100080"),
+        ),
+    ),
+    # 5c. Lateral movement: a remote service install on the file server. The 7045
+    # evidences the service creation (Windows Service persistence); it does not
+    # show the service running, so no service-execution technique is asserted.
     ScenarioEvent(
         label_id="lateral-remote-service",
         stage="lateral_movement",
@@ -326,8 +356,8 @@ _EVENTS: tuple[ScenarioEvent, ...] = (
         action="service_install",
         object="WinHelpSvc",
         message=f"Service WinHelpSvc installed on {_SERVER} from a Temp path",
-        mitre_tactics=("Lateral Movement", "Execution", "Persistence"),
-        technique_ids=("T1021.002", "T1543.003", "T1569.002"),
+        mitre_tactics=("Persistence", "Privilege Escalation"),
+        technique_ids=("T1543.003",),
         details=(
             ("ServiceName", "WinHelpSvc"),
             ("ImagePath", _SVC_BINARY),
@@ -421,6 +451,9 @@ OFFICE_INTRUSION = Scenario(
     ip_iocs=(_WS_IP, _SRV_IP, _C2_IP),
     domain_iocs=(_C2_DOMAIN,),
     file_iocs=(_IMPLANT_PATH, _SVC_BINARY, _ARCHIVE_PATH),
-    hash_iocs=("service_binary", "implant"),
+    # Only hashes that are actually emitted into a CSV row belong here, so an
+    # evidence-only extractor can recover every hash the ground truth declares.
+    # The implant path is still an observable IOC; its hash is not in evidence.
+    hash_iocs=("service_binary",),
     events=_EVENTS,
 )

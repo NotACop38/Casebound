@@ -154,7 +154,11 @@ def check_secrets() -> bool:
     _print_header("secrets (secret scan)")
     files = _git_tracked_files()
     if shutil.which("detect-secrets-hook") and BASELINE.exists():
-        cmd = ["detect-secrets-hook", "--baseline", str(BASELINE)]
+        # Pass the baseline as a repo-relative path so it matches its own entry in
+        # the file list below (the subprocess runs with cwd=ROOT). With an absolute
+        # path the hook does not recognize the baseline among the scanned files and
+        # scans it as ordinary content, flagging the hashed_secret values it stores.
+        cmd = ["detect-secrets-hook", "--baseline", str(BASELINE.relative_to(ROOT))]
         cmd.extend(str(p.relative_to(ROOT)) for p in files)
         # Fixed tool name plus tracked file paths; no shell, no untrusted input.
         result = subprocess.run(cmd, cwd=ROOT)  # nosec B603

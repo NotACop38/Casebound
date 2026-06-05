@@ -27,8 +27,9 @@ A multi-stage host intrusion:
 2. Command and control: PowerShell pulls a stager over HTTPS (T1071.001, T1105).
 3. Persistence: a Run key (T1547.001) and a scheduled task (T1053.005).
 4. Credential access: the implant reads LSASS memory (T1003.001).
-5. Lateral movement: a network logon (T1021.002) and a remote service install
-   (T1543.003, T1569.002) on a file server.
+5. Lateral movement on a file server: a stolen-credential network logon
+   (T1078.002), an ADMIN$ share access (T1021.002), and a remote service install
+   (T1543.003). Each technique is grounded in evidence visible in its own row.
 6. Collection and exfiltration: data is archived (T1560.001) and pushed to an
    external host (T1041).
 

@@ -108,6 +108,8 @@ def run_demo(
     out_dir: Path,
     *,
     model: NarrativeModel | None = None,
+    model_label: str | None = None,
+    max_rounds: int | None = None,
     seed: int | None = None,
 ) -> DemoResult:
     """Run the full Phase 1 slice offline and write the HTML report (FR34).
@@ -119,8 +121,10 @@ def run_demo(
     Fully offline with no API keys. When ``model`` is None, the no-model
     deterministic path is taken: the report carries the timeline, the tags, and the
     evidence appendix, and says no narrative was produced (FR26). When a model is
-    supplied (a local provider, or the mocked model the tests use), the verified
-    narrative and the rejected-claims audit are included.
+    supplied (a local provider, the bundled offline demo narrator, or the mocked
+    model the tests use), the verified narrative and the rejected-claims audit are
+    included. ``model_label`` names the narrative source in the report;
+    ``max_rounds`` overrides the verifier's revision-round budget.
     """
     from casebound.enrich.attack import tag_events
     from casebound.generate import DEFAULT_SEED, generate
@@ -128,7 +132,7 @@ def run_demo(
     from casebound.ingest import HayabusaAdapter
     from casebound.normalize import normalize_records
     from casebound.report import write_report
-    from casebound.verify import verify_narrative
+    from casebound.verify import DEFAULT_MAX_ROUNDS, verify_narrative
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -142,8 +146,11 @@ def run_demo(
     normalized = normalize_records(HayabusaAdapter().read(csv_path))
     events = tag_events(normalized.events)
 
-    verification = verify_narrative(events, model) if model is not None else None
-    model_label = None if model is None else "local model (offline)"
+    rounds = DEFAULT_MAX_ROUNDS if max_rounds is None else max_rounds
+    verification = verify_narrative(events, model, max_rounds=rounds) if model is not None else None
+    resolved_label = None
+    if model is not None:
+        resolved_label = model_label if model_label is not None else "local model (offline)"
 
     report_path = write_report(
         out_dir / DEMO_REPORT_NAME,
@@ -151,7 +158,7 @@ def run_demo(
         verification,
         scenario=scenario.ground_truth["scenario"],
         source_tool="hayabusa",
-        model_label=model_label,
+        model_label=resolved_label,
         provenance=normalized.provenance,
     )
 
@@ -177,15 +184,42 @@ def demo(
         "-o",
         help="Directory to write the report and regenerated evidence into.",
     ),
+    no_model: bool = typer.Option(
+        False,
+        "--no-model",
+        help="Emit the deterministic report with no narrative, the no-model path (FR26).",
+    ),
 ) -> None:
     """Run the full pipeline on the bundled synthetic scenario, offline (FR34).
 
-    Ingests, normalizes, tags ATT&CK, verifies the narrative when a local model is
-    configured, and writes a self-contained HTML report to ``out-dir/report.html``.
-    Runs with no API keys. With no local model configured it emits the deterministic
-    report and says so.
+    Ingests, normalizes, tags ATT&CK, drafts and verifies the narrative, and writes
+    a self-contained HTML report to ``out-dir/report.html``. Runs with no API keys.
+
+    A configured local model drafts the narrative; with none configured the bundled
+    offline demo narrator drafts it instead, so the verifier still runs and the
+    report carries a verified narrative and a rejected-claims audit, fully offline.
+    Pass ``--no-model`` to take the deterministic no-model path, which emits the
+    timeline, tags, and appendix with no narrative (FR26).
     """
-    result = run_demo(out_dir, model=_configured_model())
+    from casebound.narrate import OfflineDemoNarrator
+
+    used_demo_narrator = False
+    if no_model:
+        result = run_demo(out_dir, model=None)
+    else:
+        configured = _configured_model()
+        if configured is not None:
+            result = run_demo(out_dir, model=configured)
+        else:
+            # No real provider is wired yet, so the bundled offline narrator drafts
+            # the narrative in a single verification pass for a clean audit.
+            used_demo_narrator = True
+            result = run_demo(
+                out_dir,
+                model=OfflineDemoNarrator(),
+                model_label=OfflineDemoNarrator.LABEL,
+                max_rounds=0,
+            )
 
     typer.echo(f"ingested and normalized {result.event_count} events")
     if result.problem_count:
@@ -194,6 +228,11 @@ def demo(
     if result.no_model:
         typer.echo("no language model configured: wrote the deterministic report (no narrative)")
     else:
+        if used_demo_narrator:
+            typer.echo(
+                "no language model configured: drafted the narrative with the bundled "
+                "offline demo narrator (no network, no LLM)"
+            )
         typer.echo(
             f"verified narrative: {result.accepted_count} claim(s) accepted, "
             f"{result.rejected_count} rejected and logged"

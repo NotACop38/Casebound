@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from casebound.cli import DEMO_REPORT_NAME, app, run_demo
+from casebound.narrate import OfflineDemoNarrator
 from casebound.verify import DraftRequest
 from typer.testing import CliRunner
 
@@ -80,7 +81,30 @@ def test_demo_without_model_writes_deterministic_report(tmp_path: Path) -> None:
     assert 'class="claim"' not in html
 
 
-def test_demo_command_writes_report_and_reports_status(tmp_path: Path) -> None:
+def test_demo_with_offline_narrator_populates_narrative_and_audit(tmp_path: Path) -> None:
+    # The bundled offline narrator drafts grounded claims (accepted) plus seeded
+    # fabrications (rejected), so the report carries both a verified narrative and a
+    # non-empty rejected-claims audit, all offline.
+    result = run_demo(
+        tmp_path,
+        model=OfflineDemoNarrator(),
+        model_label=OfflineDemoNarrator.LABEL,
+        max_rounds=0,
+    )
+
+    assert result.no_model is False
+    assert result.accepted_count > 0
+    assert result.rejected_count == 2
+
+    html = result.report_path.read_text(encoding="utf-8")
+    assert OfflineDemoNarrator.LABEL in html
+    assert 'class="claim"' in html
+    # The audit shows the two seeded fabrications being caught.
+    assert "principal_mismatch" in html
+    assert "missing_id" in html
+
+
+def test_demo_command_default_uses_offline_narrator(tmp_path: Path) -> None:
     out_dir = tmp_path / "out"
     runner = CliRunner()
     result = runner.invoke(app, ["demo", "--out-dir", str(out_dir)])
@@ -88,6 +112,24 @@ def test_demo_command_writes_report_and_reports_status(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     report = out_dir / DEMO_REPORT_NAME
     assert report.exists()
-    # The default CLI path has no configured model, so it says so (FR26).
-    assert "no language model configured" in result.output.lower()
+    # The default path drafts with the bundled offline narrator and runs the verifier.
+    assert "offline demo narrator" in result.output.lower()
+    assert "verified narrative" in result.output.lower()
     assert str(report) in result.output
+
+    html = report.read_text(encoding="utf-8")
+    assert 'class="claim"' in html
+    assert "principal_mismatch" in html
+
+
+def test_demo_command_no_model_flag_is_deterministic(tmp_path: Path) -> None:
+    out_dir = tmp_path / "out"
+    runner = CliRunner()
+    result = runner.invoke(app, ["demo", "--out-dir", str(out_dir), "--no-model"])
+
+    assert result.exit_code == 0, result.output
+    report = out_dir / DEMO_REPORT_NAME
+    assert report.exists()
+    assert "no language model configured: wrote the deterministic report" in result.output
+    # No narrative was produced on the no-model path (FR26).
+    assert 'class="claim"' not in report.read_text(encoding="utf-8")

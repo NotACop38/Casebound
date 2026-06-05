@@ -57,6 +57,12 @@ casebound = "casebound.cli:app"
 [tool.setuptools.packages.find]
 include = ["casebound*"]
 
+[tool.setuptools.package-data]
+# The HTML report template is loaded from the installed package at runtime, so it
+# must ship inside the wheel and sdist; without this a non-editable install would
+# omit it and render_report would raise TemplateNotFound.
+"casebound.report" = ["templates/*.j2"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100

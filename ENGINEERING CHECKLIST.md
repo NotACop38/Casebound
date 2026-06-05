@@ -24,8 +24,8 @@ Goal: one source, end to end, including the verifier, on one synthetic scenario.
 Exit criteria: from a clean clone, the demo ingests the synthetic Hayabusa output, normalizes it, tags ATT&CK, runs the verifier against a mocked model, and emits an HTML report; the hallucination-trap test passes.
 
 - [x] [A] Implement the synthetic evidence generator (PRD FR33) for ONE scenario, emitting Hayabusa-style CSV plus a ground-truth label file.
-- [ ] [A] Implement the base ingest adapter interface and the Hayabusa adapter (FR1, FR2).
-- [ ] [A] Implement normalization to the canonical schema with UTC timezone handling and stable event ids (FR8 to FR11).
+- [x] [A] Implement the base ingest adapter interface and the Hayabusa adapter (FR1, FR2).
+- [x] [A] Implement normalization to the canonical schema with UTC timezone handling and stable event ids (FR8 to FR11).
 - [ ] [A] Implement deterministic ATT&CK tagging via rule-tag passthrough plus a small mapping table (FR13, FR14).
 - [ ] [D] Define the claim and citation format and the field-consistency check rules; write docs/verification.md.
 - [ ] [A] Implement the claims parser, the consistency checks, and the generate-test-refine engine (FR17 to FR25), with a mocked model provider for tests.

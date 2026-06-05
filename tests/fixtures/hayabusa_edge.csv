@@ -1,0 +1,5 @@
+"Timestamp","Computer","Channel","EventID","Level","MitreTactics","MitreTags","RecordID","RuleTitle","Details"
+"2026-03-14 04:42:17.000 -04:00","WIN-ACCT-07","Security","4688","high","Initial Access","T1059.001","80038","Office Application Spawned PowerShell (Possible Phishing Macro)","NewProcessName: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe ¦ SubjectUserName: jdoe ¦ SubjectDomainName: CORP"
+"2026-03-14 04:42:17.000 -04:00","WIN-ACCT-07","Security","4688","high","Initial Access","T1059.001","99999","Office Application Spawned PowerShell (Possible Phishing Macro)","NewProcessName: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe ¦ SubjectUserName: jdoe ¦ SubjectDomainName: CORP"
+"not-a-timestamp","WIN-ACCT-07","Security","4688","high","","","80040","Broken Row","NewProcessName: C:\Windows\bad.exe"
+"2026-03-14 05:10:00.000 -04:00","WIN-ACCT-07","Application","9999","info","","","80700","Some Uncovered Event","Foo: bar ¦ Baz: qux"

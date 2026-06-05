@@ -1,0 +1,102 @@
+{
+  "description": "The hallucination trap (PRD FR35, Section 12). A seeded set of deliberately fabricated claims that the verifier must reject every time, plus one grounded claim it must accept. The fabricated claims are built against the bundled office_intrusion scenario at the default seed (1337), so each cites a real event id but asserts a fact the evidence does not support, or cites an event that does not exist, or cites a malformed id. The test asserts the hallucination-rejection rate is 1.0 on this set.",
+  "scenario": "office_intrusion",
+  "seed": 1337,
+  "grounded": {
+    "name": "grounded_process_create",
+    "claim": {
+      "text": "On WIN-ACCT-07, CORP\\jdoe ran an encoded PowerShell process spawned from Word.",
+      "citations": ["6fb28f7a4aa4868c10e5077dbc43226eb111bc824d953c347b6348a6c58e3c70"],
+      "asserts": {
+        "datetime": "2026-03-14T08:42:17Z",
+        "principal": "CORP\\jdoe",
+        "action": "process_create",
+        "object": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+      }
+    }
+  },
+  "fabricated": [
+    {
+      "name": "fabricated_event_missing_id",
+      "description": "A wholesale invention: ransomware that never happened, citing an event id that does not exist in the store.",
+      "expected_reason": "missing_id",
+      "claim": {
+        "text": "The attacker deployed ransomware that encrypted the file server.",
+        "citations": ["deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"],
+        "asserts": {
+          "datetime": "2026-03-14T09:30:00Z",
+          "principal": "CORP\\svc-backup",
+          "action": "file_write",
+          "object": "C:\\Shares\\Finance\\READ_ME.txt"
+        }
+      }
+    },
+    {
+      "name": "time_mismatch",
+      "description": "Cites the real PowerShell process-create event but moves it six hours earlier.",
+      "expected_reason": "time_mismatch",
+      "claim": {
+        "text": "Word spawned the encoded PowerShell at 02:42 UTC, hours before the alert.",
+        "citations": ["6fb28f7a4aa4868c10e5077dbc43226eb111bc824d953c347b6348a6c58e3c70"],
+        "asserts": {
+          "datetime": "2026-03-14T02:42:17Z"
+        }
+      }
+    },
+    {
+      "name": "principal_mismatch",
+      "description": "Cites the real process-create event but attributes it to the domain administrator.",
+      "expected_reason": "principal_mismatch",
+      "claim": {
+        "text": "The domain administrator spawned the encoded PowerShell from Word.",
+        "citations": ["6fb28f7a4aa4868c10e5077dbc43226eb111bc824d953c347b6348a6c58e3c70"],
+        "asserts": {
+          "datetime": "2026-03-14T08:42:17Z",
+          "principal": "CORP\\Administrator"
+        }
+      }
+    },
+    {
+      "name": "action_mismatch",
+      "description": "Cites the interactive logon event but calls it a process creation.",
+      "expected_reason": "action_mismatch",
+      "claim": {
+        "text": "CORP\\jdoe created a new process at the start of the session.",
+        "citations": ["785a7c086b1fa04003a3995d5d5cf429247e9dea18847fc09b6f77b1fcb98bd3"],
+        "asserts": {
+          "datetime": "2026-03-14T08:30:05Z",
+          "principal": "CORP\\jdoe",
+          "action": "process_create"
+        }
+      }
+    },
+    {
+      "name": "object_mismatch",
+      "description": "Cites the real lateral-movement logon but points it at the wrong source host.",
+      "expected_reason": "object_mismatch",
+      "claim": {
+        "text": "CORP\\svc-backup logged on to the file server from 10.9.9.9.",
+        "citations": ["4e959251e72c7f9c2bcf43acbcdf51ac69baf4542c49ff55e363316299b1da5e"],
+        "asserts": {
+          "datetime": "2026-03-14T08:55:03Z",
+          "principal": "CORP\\svc-backup",
+          "action": "logon",
+          "object": "10.9.9.9"
+        }
+      }
+    },
+    {
+      "name": "malformed_citation",
+      "description": "Cites a record number instead of a real event id, so the citation is malformed and provides no support.",
+      "expected_reason": "malformed_citation",
+      "claim": {
+        "text": "An encoded PowerShell process was created from Word.",
+        "citations": ["EVENT-80038"],
+        "asserts": {
+          "datetime": "2026-03-14T08:42:17Z",
+          "action": "process_create"
+        }
+      }
+    }
+  ]
+}

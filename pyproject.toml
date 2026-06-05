@@ -8,7 +8,9 @@ version = "0.1.0"
 description = "Local-first DFIR investigation copilot whose AI narrative cannot invent facts."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Apache-2.0" }
+# License intentionally unset until the D2 decision is signed off (PRD Section 17).
+# The PRD leans Apache-2.0, but no LICENSE file is committed yet, so we do not
+# publish a definitive license in package metadata. See the stop-and-ask rule.
 authors = [{ name = "Casebound contributors" }]
 keywords = [
     "dfir",

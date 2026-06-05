@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 
@@ -42,6 +42,13 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("generic api key assignment", re.compile(r"(?i)\bapi[_-]?key\s*[:=]\s*['\"][^'\"]{16,}")),
 ]
 
+# Secret-bearing environment assignments, applied to .env files (including the
+# tracked .env.example). A non-empty value triggers this; empty placeholders such
+# as "OPENAI_API_KEY=" pass, so a real key committed by accident is still caught.
+ENV_SECRET_PATTERN = re.compile(
+    r"(?im)^[ \t]*[A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|ACCESS_KEY)[A-Z0-9_]*[ \t]*=[ \t]*\S"
+)
+
 
 def _print_header(name: str) -> None:
     print(f"\n==> {name}", flush=True)
@@ -50,7 +57,8 @@ def _print_header(name: str) -> None:
 def run_cmd(name: str, cmd: list[str]) -> bool:
     """Run a subprocess step and return True on success."""
     _print_header(name)
-    result = subprocess.run(cmd, cwd=ROOT)
+    # cmd is always a fixed, hard-coded list built in main(); no shell, no input.
+    result = subprocess.run(cmd, cwd=ROOT)  # nosec B603
     ok = result.returncode == 0
     print("PASS" if ok else f"FAIL (exit {result.returncode})")
     return ok
@@ -75,7 +83,8 @@ def check_schema() -> bool:
 
 
 def _git_tracked_files() -> list[Path]:
-    result = subprocess.run(
+    # Fixed git invocation, no untrusted input.
+    result = subprocess.run(  # nosec B603 B607
         ["git", "ls-files"],
         cwd=ROOT,
         capture_output=True,
@@ -93,9 +102,6 @@ def _git_tracked_files() -> list[Path]:
 def _builtin_secret_scan(files: list[Path]) -> bool:
     findings: list[str] = []
     for path in files:
-        # The example env file holds placeholders only and is intentionally tracked.
-        if path.name == ".env.example":
-            continue
         try:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
@@ -103,6 +109,9 @@ def _builtin_secret_scan(files: list[Path]) -> bool:
         for label, pattern in SECRET_PATTERNS:
             if pattern.search(text):
                 findings.append(f"{path.relative_to(ROOT)}: possible {label}")
+        # Env files get an extra check for non-empty secret-bearing assignments.
+        if path.name.startswith(".env") and ENV_SECRET_PATTERN.search(text):
+            findings.append(f"{path.relative_to(ROOT)}: non-empty secret-bearing env assignment")
     if findings:
         print("FAIL: potential secrets found:")
         for finding in findings:
@@ -119,7 +128,8 @@ def check_secrets() -> bool:
     if shutil.which("detect-secrets-hook") and BASELINE.exists():
         cmd = ["detect-secrets-hook", "--baseline", str(BASELINE)]
         cmd.extend(str(p.relative_to(ROOT)) for p in files)
-        result = subprocess.run(cmd, cwd=ROOT)
+        # Fixed tool name plus tracked file paths; no shell, no untrusted input.
+        result = subprocess.run(cmd, cwd=ROOT)  # nosec B603
         ok = result.returncode == 0
         print("PASS (detect-secrets)" if ok else f"FAIL (exit {result.returncode})")
         return ok

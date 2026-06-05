@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Casebound report: {{ scenario }}</title>
+<style>
+:root {
+  --ink: #1b1f24;
+  --muted: #5b6470;
+  --line: #d8dee6;
+  --panel: #f6f8fa;
+  --accept: #1a7f37;
+  --reject: #b42318;
+  --link: #0a4fa0;
+  --chip: #eaeef3;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--ink);
+  background: #ffffff;
+}
+.wrap { max-width: 980px; margin: 0 auto; padding: 32px 24px 64px; }
+header.masthead { border-bottom: 2px solid var(--ink); padding-bottom: 16px; margin-bottom: 8px; }
+header.masthead h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: -0.01em; }
+header.masthead .tagline { color: var(--muted); margin: 0; }
+.guarantee { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; margin: 20px 0; }
+.guarantee p { margin: 0; }
+.summary { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0 8px; }
+.stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; min-width: 120px; }
+.stat .n { font-size: 22px; font-weight: 700; }
+.stat .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.notice { border-left: 4px solid var(--link); background: var(--panel); padding: 12px 16px; margin: 18px 0; border-radius: 0 8px 8px 0; }
+section { margin: 36px 0; }
+section > h2 { font-size: 20px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.lead { color: var(--muted); margin-top: -4px; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); }
+td.mono, code, .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+td.when { white-space: nowrap; }
+a { color: var(--link); }
+.chip { display: inline-block; background: var(--chip); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; font-size: 11.5px; margin: 1px 2px; white-space: nowrap; }
+.chip.tech { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.claim { border: 1px solid var(--line); border-left: 4px solid var(--accept); border-radius: 0 8px 8px 0; padding: 12px 16px; margin: 12px 0; }
+.claim .statement { font-size: 15.5px; }
+.claim .cites { margin-top: 6px; font-size: 13px; color: var(--muted); }
+.audit { border: 1px solid var(--line); border-left: 4px solid var(--reject); border-radius: 0 8px 8px 0; padding: 12px 16px; margin: 12px 0; }
+.audit .why { margin-top: 6px; font-size: 13px; }
+.badge { display: inline-block; border-radius: 4px; padding: 1px 7px; font-size: 11.5px; font-weight: 600; }
+.badge.reject { background: #fbe9e7; color: var(--reject); }
+.badge.drop { background: #1b1f24; color: #fff; }
+.empty { color: var(--muted); font-style: italic; }
+.appendix .event { border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin: 12px 0; }
+.appendix .event:target { border-color: var(--link); box-shadow: 0 0 0 2px rgba(10, 79, 160, 0.18); }
+.appendix .event h3 { margin: 0 0 8px; font-size: 14px; }
+.appendix dl { display: grid; grid-template-columns: 160px 1fr; gap: 2px 12px; margin: 0; }
+.appendix dt { color: var(--muted); font-size: 12.5px; }
+.appendix dd { margin: 0; font-size: 13px; word-break: break-word; }
+footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 14px; color: var(--muted); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <h1>Casebound investigation report</h1>
+  <p class="tagline">Scenario: {{ scenario }}. Source tool: {{ source_tool }}. Narrative: {{ model_label }}.</p>
+</header>
+
+<div class="guarantee">
+  <p><strong>The guarantee.</strong> No factual claim appears in the narrative below unless it
+  resolves to a real, deterministically extracted timeline event by id and its asserted facts
+  (time, principal, action, object) are consistent with that event. The deterministic timeline
+  and appendix are the source of truth; the language model never decides what is true.</p>
+</div>
+
+<div class="summary">
+  <div class="stat"><div class="n">{{ stats.events }}</div><div class="k">Timeline events</div></div>
+  <div class="stat"><div class="n">{{ stats.hosts }}</div><div class="k">Hosts</div></div>
+  <div class="stat"><div class="n">{{ stats.techniques }}</div><div class="k">ATT&amp;CK techniques</div></div>
+  <div class="stat"><div class="n">{{ stats.accepted }}</div><div class="k">Verified claims</div></div>
+  <div class="stat"><div class="n">{{ stats.rejected }}</div><div class="k">Rejected claims</div></div>
+</div>
+
+{% if observed_techniques %}
+<p class="lead">Observed techniques:
+{% for tid in observed_techniques %}<span class="chip tech">{{ tid }}</span>{% endfor %}
+</p>
+{% endif %}
+
+<section id="narrative">
+  <h2>Verified narrative</h2>
+  {% if no_model %}
+  <div class="notice">
+    <strong>No language model configured.</strong> This is the deterministic report
+    (the no-model path). The verified narrative is an optional layer that defaults to a
+    local model so evidence never leaves the host. With no model configured, Casebound
+    still produces the full normalized timeline, the ATT&amp;CK tags, and the evidence
+    appendix below. Configure a local model to add the verified narrative.
+  </div>
+  {% elif accepted %}
+  <p class="lead">Each statement is rendered from fields the verifier checked against the cited
+  event, never from the model's free prose. Every citation links to its event in the appendix.</p>
+  {% for claim in accepted %}
+  <div class="claim">
+    <div class="statement">{{ claim.statement }}</div>
+    <div class="cites">Cited evidence:
+      {% for c in claim.citations %}<a href="#event-{{ c.id }}" class="mono">{{ c.short }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <p class="empty">The model proposed no claim that survived verification.</p>
+  {% endif %}
+</section>
+
+<section id="audit">
+  <h2>Rejected-claims audit</h2>
+  <p class="lead">Every claim the verifier rejected is recorded here for transparency, with the
+  reason it failed. A dropped claim never reached the narrative above.</p>
+  {% if audit %}
+  {% for entry in audit %}
+  <div class="audit">
+    <div>
+      <span class="badge reject">{{ entry.reason }}</span>
+      {% if entry.dropped %}<span class="badge drop">dropped</span>{% endif %}
+      <span class="mono" style="color:var(--muted);font-size:12px;">round {{ entry.round_index }}</span>
+    </div>
+    <div class="why">Model draft: {{ entry.claim_text }}</div>
+    <div class="why" style="color:var(--muted);">Reason: {{ entry.detail }}</div>
+    {% if entry.citations %}
+    <div class="cites">Cited:
+      {% for c in entry.citations %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% else %}
+  <p class="empty">No claims were rejected.</p>
+  {% endif %}
+</section>
+
+<section id="timeline">
+  <h2>Deterministic timeline</h2>
+  <p class="lead">Every event normalized to the canonical schema and tagged with ATT&amp;CK
+  deterministically. Each id links to its full record in the appendix.</p>
+  <table>
+    <thead>
+      <tr><th>Time (UTC)</th><th>Host</th><th>Principal</th><th>Action</th><th>Object</th><th>ATT&amp;CK</th><th>Event</th></tr>
+    </thead>
+    <tbody>
+      {% for ev in timeline %}
+      <tr>
+        <td class="when mono">{{ ev.datetime }}</td>
+        <td>{{ ev.host }}</td>
+        <td class="mono">{{ ev.principal }}</td>
+        <td class="mono">{{ ev.action }}</td>
+        <td class="mono">{{ ev.object }}</td>
+        <td>{% for tid in ev.techniques %}<span class="chip tech">{{ tid }}</span>{% endfor %}</td>
+        <td><a href="#event-{{ ev.event_id }}" class="mono">{{ ev.short_id }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section id="appendix" class="appendix">
+  <h2>Evidence appendix</h2>
+  <p class="lead">The full canonical record for every event, with its source provenance for audit.
+  This is the deterministic source of truth the narrative is fenced to.</p>
+  {% for ev in appendix %}
+  <div class="event" id="event-{{ ev.event_id }}">
+    <h3 class="mono">{{ ev.event_id }}</h3>
+    <dl>
+      <dt>message</dt><dd>{{ ev.message }}</dd>
+      <dt>datetime</dt><dd class="mono">{{ ev.datetime }}</dd>
+      <dt>timestamp_desc</dt><dd>{{ ev.timestamp_desc }}</dd>
+      <dt>host</dt><dd>{{ ev.host }}</dd>
+      <dt>principal</dt><dd class="mono">{{ ev.principal }}</dd>
+      <dt>action</dt><dd class="mono">{{ ev.action }}</dd>
+      <dt>object</dt><dd class="mono">{{ ev.object }}</dd>
+      <dt>source</dt><dd>{{ ev.source_tool }} / {{ ev.source_artifact }}</dd>
+      {% if ev.techniques %}
+      <dt>attack_techniques</dt><dd>{% for t in ev.techniques %}<span class="chip tech">{{ t.technique_id }}</span> <span style="color:var(--muted);font-size:11.5px;">({{ t.mapping_source }})</span>{% if not loop.last %} {% endif %}{% endfor %}</dd>
+      {% endif %}
+      {% if ev.details %}
+      <dt>details</dt><dd>{% for k, v in ev.details %}<div><span style="color:var(--muted);">{{ k }}:</span> <span class="mono">{{ v }}</span></div>{% endfor %}</dd>
+      {% endif %}
+      <dt>provenance</dt><dd>{% for ref in ev.provenance %}<span class="mono">{{ ref }}</span>{% if not loop.last %}; {% endif %}{% endfor %}</dd>
+    </dl>
+  </div>
+  {% endfor %}
+</section>
+
+<footer>
+  Generated by Casebound, offline, from synthetic evidence. The deterministic timeline, the
+  ATT&amp;CK tags, and this appendix regenerate from a clean clone with no API keys. Citation
+  accuracy is 1.0 by construction: every claim above links to a field-consistent event.
+</footer>
+
+</div>
+</body>
+</html>

@@ -42,9 +42,19 @@ from casebound.verify import (
 # seed so its hardcoded event ids match the scenario the test regenerates.
 TRAP_PATH = Path(__file__).resolve().parents[1] / "samples" / "hallucination_trap.json"
 
-# A real event id from the office_intrusion scenario at the default seed: the
-# Word-spawned encoded PowerShell process-create event.
+# Real event ids from the office_intrusion scenario at the default seed: the
+# Word-spawned encoded PowerShell process-create event, and the lateral-movement
+# network logon.
 PROCESS_CREATE_ID = "6fb28f7a4aa4868c10e5077dbc43226eb111bc824d953c347b6348a6c58e3c70"
+LATERAL_LOGON_ID = "4e959251e72c7f9c2bcf43acbcdf51ac69baf4542c49ff55e363316299b1da5e"
+
+
+# The engine assigns each rejected claim a stable id in rejection order: the first
+# rejected claim is "c0", the next "c1", and so on. It passes that id to the model
+# in each RevisionRequest, and a revision references the id it fixes through its
+# "revises" field. The mocked model echoes the id the same way a real model would.
+FIRST_CLAIM_ID = "c0"
+SECOND_CLAIM_ID = "c1"
 
 
 class StubModel:
@@ -167,12 +177,12 @@ def test_missing_id_is_rejected_and_logged(tmp_path: Path) -> None:
             )
         ]
     )
-    result = verify_narrative(events, model)
+    result = verify_narrative(events, model, max_rounds=0)
 
     assert result.accepted == ()
     assert len(result.dropped) == 1
     assert result.dropped[0].reason is RejectionReason.MISSING_ID
-    # Every round's rejection is logged, and the last is the drop (FR24, FR25).
+    # The rejection is logged and dropped in the single pass (FR24, FR25).
     assert all(entry.reason is RejectionReason.MISSING_ID for entry in result.audit)
 
 
@@ -289,6 +299,7 @@ def test_rejected_claim_is_revised_and_then_accepted(tmp_path: Path) -> None:
             "text": "CORP\\jdoe spawned the PowerShell process from Word.",
             "citations": [PROCESS_CREATE_ID],
             "asserts": {"principal": "CORP\\jdoe", "action": "process_create"},
+            "revises": FIRST_CLAIM_ID,
         }
     )
     model = StubModel([bad, fixed])
@@ -302,18 +313,22 @@ def test_rejected_claim_is_revised_and_then_accepted(tmp_path: Path) -> None:
     assert len(result.audit) == 1
     assert result.audit[0].dropped is False
     assert result.audit[0].reason is RejectionReason.PRINCIPAL_MISMATCH
-    # The model was handed the rejection as a revision hint on the second round.
+    # The model was handed the rejection, with its id, as a revision hint.
     assert model.requests[1].is_revision
+    assert model.requests[1].revisions[0].claim_id == FIRST_CLAIM_ID
     assert model.requests[1].revisions[0].reason is RejectionReason.PRINCIPAL_MISMATCH
 
 
 def test_unsupported_claim_is_dropped_after_max_rounds(tmp_path: Path) -> None:
     events = _events(tmp_path)
+    # A conforming model resubmits the same outstanding claim by id every round, but
+    # never actually fixes it, so it is dropped after the final round.
     bad = _response(
         {
             "text": "The administrator spawned the PowerShell process.",
             "citations": [PROCESS_CREATE_ID],
             "asserts": {"principal": "CORP\\Administrator"},
+            "revises": FIRST_CLAIM_ID,
         }
     )
     model = StubModel([bad])  # never fixed: repeated every round
@@ -383,8 +398,10 @@ def test_hallucination_trap_rejects_every_fabricated_claim(tmp_path: Path) -> No
     rejected = 0
     fabricated = trap["fabricated"]
     for case in fabricated:
-        model = StubModel([_response(case["claim"])])  # never fixed
-        result = verify_narrative(events, model)
+        model = StubModel([_response(case["claim"])])
+        # One verification pass (no revision rounds): the verifier must reject the
+        # fabrication outright.
+        result = verify_narrative(events, model, max_rounds=0)
         assert result.accepted == (), f"{case['name']} must not be accepted"
         assert len(result.dropped) == 1, f"{case['name']} must be dropped"
         assert result.dropped[0].reason.value == case["expected_reason"], case["name"]
@@ -392,3 +409,142 @@ def test_hallucination_trap_rejects_every_fabricated_claim(tmp_path: Path) -> No
 
     rejection_rate = rejected / len(fabricated)
     assert rejection_rate == 1.0
+
+
+# 7. Citations on an accepted claim must all resolve (no unverified links reach the
+#    report). Regression for the multi-citation hole.
+
+
+def test_unresolved_extra_citation_rejects_the_whole_claim(tmp_path: Path) -> None:
+    # One valid backing event plus a well-formed but nonexistent id. The claim must
+    # not be accepted with a citation that links to nothing.
+    events = _events(tmp_path)
+    fake_id = "deadbeef" * 8
+    model = StubModel(
+        [
+            _response(
+                {
+                    "text": "An encoded PowerShell process was created from Word.",
+                    "citations": [PROCESS_CREATE_ID, fake_id],
+                    "asserts": {"action": "process_create"},
+                }
+            )
+        ]
+    )
+    result = verify_narrative(events, model)
+    assert result.accepted == ()
+    assert result.dropped[0].reason is RejectionReason.MISSING_ID
+
+
+def test_malformed_extra_citation_rejects_the_whole_claim(tmp_path: Path) -> None:
+    events = _events(tmp_path)
+    model = StubModel(
+        [
+            _response(
+                {
+                    "text": "An encoded PowerShell process was created from Word.",
+                    "citations": [PROCESS_CREATE_ID, "EVENT-80038"],
+                    "asserts": {"action": "process_create"},
+                }
+            )
+        ]
+    )
+    result = verify_narrative(events, model)
+    assert result.accepted == ()
+    assert result.dropped[0].reason is RejectionReason.MALFORMED_CITATION
+
+
+# 8. The report content is rendered from checked fields only: prose cannot smuggle
+#    an unverified fact into the report.
+
+
+def test_accepted_claim_renders_only_verified_fields_not_prose(tmp_path: Path) -> None:
+    # The prose attributes the process to the domain administrator, but the claim
+    # only asserts (and the verifier only checks) the action. The accepted claim
+    # must not carry the administrator as a verified fact, and the rendered
+    # statement must contain no fact beyond the checked assertion.
+    events = _events(tmp_path)
+    model = StubModel(
+        [
+            _response(
+                {
+                    "text": "The domain administrator spawned the encoded PowerShell process.",
+                    "citations": [PROCESS_CREATE_ID],
+                    "asserts": {"action": "process_create"},
+                }
+            )
+        ]
+    )
+    result = verify_narrative(events, model)
+
+    assert len(result.accepted) == 1
+    claim = result.accepted[0]
+    # Only the checked field is authoritative; the smuggled principal is not.
+    assert claim.asserts.action == "process_create"
+    assert claim.asserts.principal is None
+    statement = claim.rendered_statement()
+    assert "administrator" not in statement.lower()
+    assert "process_create" in statement
+    # The model's prose is retained for the audit but flagged non-authoritative.
+    assert "administrator" in claim.draft_text.lower()
+
+
+# 9. The loop never silently loses an unsupported claim during revision (FR24, FR25).
+
+
+def test_omitted_earlier_claim_is_recorded_as_dropped(tmp_path: Path) -> None:
+    # The case positional matching got wrong: round 0 rejects two claims; round 1
+    # omits the earlier one (c0) and fixes only the later one (c1) by id. The fix
+    # must be accepted, the omitted earlier claim must be dropped and recorded, and
+    # the fixed claim's original must not be spuriously dropped.
+    events = _events(tmp_path)
+    bad_principal = {  # becomes c0, the earlier claim that gets omitted
+        "text": "The administrator spawned the PowerShell process.",
+        "citations": [PROCESS_CREATE_ID],
+        "asserts": {"principal": "CORP\\Administrator", "action": "process_create"},
+    }
+    bad_action = {  # becomes c1, the later claim that gets fixed
+        "text": "CORP\\svc-backup created a process during the network logon.",
+        "citations": [LATERAL_LOGON_ID],
+        "asserts": {"action": "process_create"},
+    }
+    fixed_action = {
+        "text": "CORP\\svc-backup logged on to the file server from 10.4.12.66.",
+        "citations": [LATERAL_LOGON_ID],
+        "asserts": {"action": "logon"},
+        "revises": SECOND_CLAIM_ID,
+    }
+    model = StubModel(
+        [
+            _response(bad_principal, bad_action),
+            _response(fixed_action),  # fixes c1, omits c0
+            _response(),  # nothing further for the omitted c0
+        ]
+    )
+    result = verify_narrative(events, model, max_rounds=2)
+
+    # The later claim was fixed and accepted.
+    assert len(result.accepted) == 1
+    assert result.accepted[0].asserts.action == "logon"
+    # The omitted earlier claim is dropped and recorded, not silently lost.
+    assert len(result.dropped) == 1
+    assert result.dropped[0].reason is RejectionReason.PRINCIPAL_MISMATCH
+    assert "administrator" in result.dropped[0].claim_text.lower()
+
+
+def test_unparseable_revision_drops_outstanding_claim(tmp_path: Path) -> None:
+    events = _events(tmp_path)
+    bad = _response(
+        {
+            "text": "The administrator spawned the PowerShell process.",
+            "citations": [PROCESS_CREATE_ID],
+            "asserts": {"principal": "CORP\\Administrator"},
+        }
+    )
+    model = StubModel([bad, "garbage, not json"])
+    result = verify_narrative(events, model, max_rounds=1)
+
+    assert result.accepted == ()
+    # The outstanding claim is not lost when the revision round is unparseable.
+    assert len(result.dropped) == 1
+    assert result.dropped[0].reason is RejectionReason.PRINCIPAL_MISMATCH

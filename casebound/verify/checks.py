@@ -207,17 +207,16 @@ def verify_claim(
     """
     tol = tolerance if tolerance is not None else FieldTolerance()
 
-    # 1. The claim must point at evidence with a well-formed citation.
+    # 1. Every citation must be well-formed. A malformed citation provides no
+    #    support, and an accepted claim must never carry one, so any malformed
+    #    citation rejects the whole claim rather than being silently tolerated.
+    if claim.malformed_citations:
+        return ClaimVerdict(
+            ok=False,
+            reason=RejectionReason.MALFORMED_CITATION,
+            detail=f"claim carries malformed citations: {list(claim.malformed_citations)}",
+        )
     if not claim.citations:
-        if claim.malformed_citations:
-            return ClaimVerdict(
-                ok=False,
-                reason=RejectionReason.MALFORMED_CITATION,
-                detail=(
-                    "no well-formed event-id citation; "
-                    f"malformed: {list(claim.malformed_citations)}"
-                ),
-            )
         return ClaimVerdict(
             ok=False,
             reason=RejectionReason.NO_CITATIONS,
@@ -234,17 +233,20 @@ def verify_claim(
             ),
         )
 
-    # 3. At least one cited id must resolve to a real event.
-    cited_events = [(cid, event_index[cid]) for cid in claim.citations if cid in event_index]
-    if not cited_events:
+    # 3. Every cited id must resolve to a real event. An accepted claim must not
+    #    carry a citation that links to nothing, so a single unresolved id (even
+    #    alongside a valid one) rejects the claim (FR20, FR32).
+    missing = [cid for cid in claim.citations if cid not in event_index]
+    if missing:
         return ClaimVerdict(
             ok=False,
             reason=RejectionReason.MISSING_ID,
-            detail=f"no cited event id exists in the store: {list(claim.citations)}",
+            detail=f"cited event ids do not exist in the store: {missing}",
         )
+    cited_events = [(cid, event_index[cid]) for cid in claim.citations]
 
     # 4. A single cited event must be consistent with every asserted field. The
-    #    first existing candidate's failure supplies the rejection reason.
+    #    first candidate's failure supplies the rejection reason.
     first_failure: tuple[RejectionReason, str] | None = None
     for cid, event in cited_events:
         failure = _check_event(claim.asserts, event, tol)

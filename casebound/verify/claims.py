@@ -88,7 +88,10 @@ class Claim:
     ``citations`` holds the well-formed event ids in first-seen order with
     duplicates removed. ``malformed_citations`` holds the raw strings that were not
     valid event ids, kept for the audit log. ``index`` is the claim's position in
-    the narrative the model returned.
+    the narrative the model returned. ``revises`` is the id of the outstanding
+    claim this one replaces during a revision round (see ``docs/verification.md``),
+    or None for a fresh claim; it is how the engine matches a revision to the claim
+    it fixes without relying on ordering.
     """
 
     index: int
@@ -96,6 +99,7 @@ class Claim:
     citations: tuple[str, ...]
     malformed_citations: tuple[str, ...]
     asserts: ClaimAssertion
+    revises: str | None = None
 
     @property
     def all_citations(self) -> tuple[str, ...]:
@@ -110,6 +114,7 @@ class Claim:
             "citations": list(self.citations),
             "malformed_citations": list(self.malformed_citations),
             "asserts": self.asserts.to_dict(),
+            "revises": self.revises,
         }
 
 
@@ -228,6 +233,7 @@ def parse_claims(raw: str) -> list[Claim]:
                 citations=well_formed,
                 malformed_citations=malformed,
                 asserts=asserts,
+                revises=_coerce_optional_str(entry.get("revises")),
             )
         )
     return claims

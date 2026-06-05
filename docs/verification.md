@@ -68,6 +68,10 @@ Each claim object has three parts:
   fields are recognized, each optional: `datetime`, `principal`, `action`,
   `object`. These mirror the canonical event fields of the same name. A claim
   must assert at least one of them. Any other key is ignored.
+- `revises` (revision rounds only): the `claim_id` of the outstanding claim this
+  one replaces, echoed from the revision request (see the loop below). Absent on a
+  fresh claim. It is how the engine matches a revision to the claim it fixes
+  without relying on ordering.
 
 The `asserts` block is the heart of the fence. The model is not trusted to write
 true prose; it is required to commit, in machine-readable form, to the specific
@@ -78,28 +82,36 @@ claim the evidence actually supports.
 ### Parsing rules
 
 Claims are parsed deterministically (FR19). The parser is strict about structure
-and lenient about individual citations:
+and records every citation, well-formed or not, so the verifier can act on it:
 
 - The output must be valid JSON: either the object form above, or a bare array of
   claim objects. Anything else is unparseable and yields no claims for that round.
 - Each citation is classified as well-formed (it matches the `event_id` pattern)
   or malformed (anything else, for example `EVENT-1487` or a truncated hash).
   Malformed citations are retained for the audit log but provide no support: they
-  are treated as unsupported (PRD Section 11 step 3). A claim whose only citations
-  are malformed is rejected.
+  are treated as unsupported (PRD Section 11 step 3).
 - A claim that carries no citation at all is rejected.
+
+Because an accepted claim's citations all become links in the report, the verifier
+holds every citation to the same standard: a claim is rejected if it carries any
+malformed citation, or any well-formed citation that does not resolve to a real
+event, even when one other citation does back the assertion. This keeps the
+guarantee airtight for multi-citation claims: every citation on an accepted claim
+resolves to a real event.
 
 ## Field-consistency rules
 
-A claim is **accepted** if and only if both hold:
+A claim is **accepted** if and only if all hold:
 
-1. **Existence.** At least one cited `event_id` resolves to a real event in the
-   deterministic store (FR20). A malformed or nonexistent id provides no support.
-2. **Field consistency.** There exists at least one cited, existing event that is
-   consistent with **every** field the claim asserts (FR21). A single event must
-   back the whole assertion; this prevents stitching one event's principal onto
-   another event's action. Additional citations are permitted (for example for
-   context) but at least one must fully back the claim.
+1. **Citations resolve.** The claim carries at least one citation, no malformed
+   citation, and every cited `event_id` resolves to a real event in the
+   deterministic store (FR20). A single unresolved or malformed citation rejects
+   the claim, so every citation on an accepted claim links to a real event (FR32).
+2. **Field consistency.** There exists at least one cited event that is consistent
+   with **every** field the claim asserts (FR21). A single event must back the
+   whole assertion; this prevents stitching one event's principal onto another
+   event's action. Additional cited events are permitted (for example for context)
+   but they too must resolve, and at least one must fully back the claim.
 
 If no single cited event satisfies all asserted fields, the claim is **rejected**
 with the reason from the first field that fails, checked in this fixed order:
@@ -145,6 +157,21 @@ Every rejected claim is recorded with one of these reasons (FR22, FR25):
 | `action_mismatch` | The asserted action does not match the cited event. |
 | `object_mismatch` | The asserted object does not match the cited event. |
 
+## What reaches the report: checked fields only
+
+The model's free `text` is a drafting aid, not the report's source of truth.
+Nothing stops a model from stating a fact in prose that it never put in `asserts`
+(for example, naming the domain administrator in `text` while asserting only
+`action`), and the verifier cannot deterministically check arbitrary prose. So the
+prose is never emitted as fact. An accepted claim carries the verified `asserts`
+and its backing event, and the report renders the claim from those checked fields
+only. The model's original prose is preserved alongside the claim as a
+non-authoritative draft for the audit trail, but it is never rendered as a factual
+statement. This is the fence made literal: the model proposes wording, but only
+fields the verifier confirmed reach the reader as facts (AGENTS.md prime
+directive). The practical consequence: every fact a model wants in the report must
+be in `asserts`, where it is checked, or it does not appear.
+
 ## The generate-test-refine loop
 
 The engine drives the loop in PRD Section 11 (FR23 to FR25):
@@ -154,14 +181,23 @@ The engine drives the loop in PRD Section 11 (FR23 to FR25):
 2. Parse and verify every claim. Accepted claims are set aside. Each rejected
    claim is recorded in the audit log with its round, citations, reason, and a
    human-readable detail.
-3. If any claim was rejected and rounds remain, resubmit just the rejected claims,
-   each with its reason, for revision. The model returns revised claims, which are
-   re-verified. A revised claim that now passes is accepted; its original
-   rejection stays in the audit log for transparency.
-4. Repeat up to `max_rounds` revision rounds (default 2).
-5. After the final round, drop any claim that is still unsupported. A dropped
+3. If any claim was rejected and rounds remain, resubmit just the rejected claims
+   for revision. Each outstanding claim carries a stable `claim_id`, sent to the
+   model in its revision request. The model returns a revised claim that names the
+   id it fixes in a `revises` field, so the engine matches a revision to the claim
+   it replaces by id, never by position (a revision that omits an earlier claim
+   while fixing a later one is handled correctly). The revisions are re-verified; a
+   revised claim that now passes is accepted, and its original rejection stays in
+   the audit log for transparency. A returned claim with no `revises` (or an
+   unknown id) is treated as a fresh claim and is still fully verified, so a
+   revision round can never introduce an unverified claim.
+4. An outstanding claim that no revision addresses (the model omitted it, or the
+   revision output was unparseable) is carried to the final round and then dropped
+   and recorded, never silently lost.
+5. Repeat up to `max_rounds` revision rounds (default 2).
+6. After the final round, drop any claim that is still unsupported. A dropped
    claim never reaches the report and is flagged `dropped` in the audit log
-   (FR24).
+   (FR24, FR25).
 
 The output is the verified narrative (the accepted claims, each linked to its
 backing event for inline citation in the report, FR32) plus the rejected-claims

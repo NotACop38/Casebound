@@ -49,6 +49,14 @@ PROCESS_CREATE_ID = "6fb28f7a4aa4868c10e5077dbc43226eb111bc824d953c347b6348a6c58
 LATERAL_LOGON_ID = "4e959251e72c7f9c2bcf43acbcdf51ac69baf4542c49ff55e363316299b1da5e"
 
 
+# The engine assigns each rejected claim a stable id in rejection order: the first
+# rejected claim is "c0", the next "c1", and so on. It passes that id to the model
+# in each RevisionRequest, and a revision references the id it fixes through its
+# "revises" field. The mocked model echoes the id the same way a real model would.
+FIRST_CLAIM_ID = "c0"
+SECOND_CLAIM_ID = "c1"
+
+
 class StubModel:
     """A mocked ``NarrativeModel`` that replays scripted raw responses.
 
@@ -169,12 +177,12 @@ def test_missing_id_is_rejected_and_logged(tmp_path: Path) -> None:
             )
         ]
     )
-    result = verify_narrative(events, model)
+    result = verify_narrative(events, model, max_rounds=0)
 
     assert result.accepted == ()
     assert len(result.dropped) == 1
     assert result.dropped[0].reason is RejectionReason.MISSING_ID
-    # Every round's rejection is logged, and the last is the drop (FR24, FR25).
+    # The rejection is logged and dropped in the single pass (FR24, FR25).
     assert all(entry.reason is RejectionReason.MISSING_ID for entry in result.audit)
 
 
@@ -291,6 +299,7 @@ def test_rejected_claim_is_revised_and_then_accepted(tmp_path: Path) -> None:
             "text": "CORP\\jdoe spawned the PowerShell process from Word.",
             "citations": [PROCESS_CREATE_ID],
             "asserts": {"principal": "CORP\\jdoe", "action": "process_create"},
+            "revises": FIRST_CLAIM_ID,
         }
     )
     model = StubModel([bad, fixed])
@@ -304,18 +313,22 @@ def test_rejected_claim_is_revised_and_then_accepted(tmp_path: Path) -> None:
     assert len(result.audit) == 1
     assert result.audit[0].dropped is False
     assert result.audit[0].reason is RejectionReason.PRINCIPAL_MISMATCH
-    # The model was handed the rejection as a revision hint on the second round.
+    # The model was handed the rejection, with its id, as a revision hint.
     assert model.requests[1].is_revision
+    assert model.requests[1].revisions[0].claim_id == FIRST_CLAIM_ID
     assert model.requests[1].revisions[0].reason is RejectionReason.PRINCIPAL_MISMATCH
 
 
 def test_unsupported_claim_is_dropped_after_max_rounds(tmp_path: Path) -> None:
     events = _events(tmp_path)
+    # A conforming model resubmits the same outstanding claim by id every round, but
+    # never actually fixes it, so it is dropped after the final round.
     bad = _response(
         {
             "text": "The administrator spawned the PowerShell process.",
             "citations": [PROCESS_CREATE_ID],
             "asserts": {"principal": "CORP\\Administrator"},
+            "revises": FIRST_CLAIM_ID,
         }
     )
     model = StubModel([bad])  # never fixed: repeated every round
@@ -385,8 +398,10 @@ def test_hallucination_trap_rejects_every_fabricated_claim(tmp_path: Path) -> No
     rejected = 0
     fabricated = trap["fabricated"]
     for case in fabricated:
-        model = StubModel([_response(case["claim"])])  # never fixed
-        result = verify_narrative(events, model)
+        model = StubModel([_response(case["claim"])])
+        # One verification pass (no revision rounds): the verifier must reject the
+        # fabrication outright.
+        result = verify_narrative(events, model, max_rounds=0)
         assert result.accepted == (), f"{case['name']} must not be accepted"
         assert len(result.dropped) == 1, f"{case['name']} must be dropped"
         assert result.dropped[0].reason.value == case["expected_reason"], case["name"]
@@ -477,40 +492,44 @@ def test_accepted_claim_renders_only_verified_fields_not_prose(tmp_path: Path) -
 # 9. The loop never silently loses an unsupported claim during revision (FR24, FR25).
 
 
-def test_claim_omitted_during_revision_is_recorded_as_dropped(tmp_path: Path) -> None:
+def test_omitted_earlier_claim_is_recorded_as_dropped(tmp_path: Path) -> None:
+    # The case positional matching got wrong: round 0 rejects two claims; round 1
+    # omits the earlier one (c0) and fixes only the later one (c1) by id. The fix
+    # must be accepted, the omitted earlier claim must be dropped and recorded, and
+    # the fixed claim's original must not be spuriously dropped.
     events = _events(tmp_path)
-    # Round 0 returns two bad claims; round 1 fixes only the first and omits the
-    # second; round 2 is empty. The omitted claim must be dropped and recorded.
-    bad_principal = {
+    bad_principal = {  # becomes c0, the earlier claim that gets omitted
         "text": "The administrator spawned the PowerShell process.",
         "citations": [PROCESS_CREATE_ID],
         "asserts": {"principal": "CORP\\Administrator", "action": "process_create"},
     }
-    bad_action = {
+    bad_action = {  # becomes c1, the later claim that gets fixed
         "text": "CORP\\svc-backup created a process during the network logon.",
         "citations": [LATERAL_LOGON_ID],
         "asserts": {"action": "process_create"},
     }
-    fixed_principal = {
-        "text": "CORP\\jdoe spawned the PowerShell process from Word.",
-        "citations": [PROCESS_CREATE_ID],
-        "asserts": {"principal": "CORP\\jdoe", "action": "process_create"},
+    fixed_action = {
+        "text": "CORP\\svc-backup logged on to the file server from 10.4.12.66.",
+        "citations": [LATERAL_LOGON_ID],
+        "asserts": {"action": "logon"},
+        "revises": SECOND_CLAIM_ID,
     }
     model = StubModel(
         [
             _response(bad_principal, bad_action),
-            _response(fixed_principal),  # omits the second claim
-            _response(),  # nothing further
+            _response(fixed_action),  # fixes c1, omits c0
+            _response(),  # nothing further for the omitted c0
         ]
     )
     result = verify_narrative(events, model, max_rounds=2)
 
+    # The later claim was fixed and accepted.
     assert len(result.accepted) == 1
-    assert result.accepted[0].asserts.principal == "CORP\\jdoe"
-    # The omitted second claim is dropped and recorded, not silently lost.
+    assert result.accepted[0].asserts.action == "logon"
+    # The omitted earlier claim is dropped and recorded, not silently lost.
     assert len(result.dropped) == 1
-    assert result.dropped[0].reason is RejectionReason.ACTION_MISMATCH
-    assert "svc-backup" in result.dropped[0].claim_text
+    assert result.dropped[0].reason is RejectionReason.PRINCIPAL_MISMATCH
+    assert "administrator" in result.dropped[0].claim_text.lower()
 
 
 def test_unparseable_revision_drops_outstanding_claim(tmp_path: Path) -> None:

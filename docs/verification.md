@@ -68,6 +68,10 @@ Each claim object has three parts:
   fields are recognized, each optional: `datetime`, `principal`, `action`,
   `object`. These mirror the canonical event fields of the same name. A claim
   must assert at least one of them. Any other key is ignored.
+- `revises` (revision rounds only): the `claim_id` of the outstanding claim this
+  one replaces, echoed from the revision request (see the loop below). Absent on a
+  fresh claim. It is how the engine matches a revision to the claim it fixes
+  without relying on ordering.
 
 The `asserts` block is the heart of the fence. The model is not trusted to write
 true prose; it is required to commit, in machine-readable form, to the specific
@@ -177,14 +181,18 @@ The engine drives the loop in PRD Section 11 (FR23 to FR25):
 2. Parse and verify every claim. Accepted claims are set aside. Each rejected
    claim is recorded in the audit log with its round, citations, reason, and a
    human-readable detail.
-3. If any claim was rejected and rounds remain, resubmit just the rejected claims,
-   each with its reason, for revision. The model is expected to return a revised
-   claim for each outstanding claim, in the same order, so the engine can match a
-   revision to the claim it replaces by position. The revisions are re-verified; a
+3. If any claim was rejected and rounds remain, resubmit just the rejected claims
+   for revision. Each outstanding claim carries a stable `claim_id`, sent to the
+   model in its revision request. The model returns a revised claim that names the
+   id it fixes in a `revises` field, so the engine matches a revision to the claim
+   it replaces by id, never by position (a revision that omits an earlier claim
+   while fixing a later one is handled correctly). The revisions are re-verified; a
    revised claim that now passes is accepted, and its original rejection stays in
-   the audit log for transparency.
-4. An outstanding claim the model fails to return (it omitted the claim, or the
-   revision output was unparseable) is treated as still unsupported: it is dropped
+   the audit log for transparency. A returned claim with no `revises` (or an
+   unknown id) is treated as a fresh claim and is still fully verified, so a
+   revision round can never introduce an unverified claim.
+4. An outstanding claim that no revision addresses (the model omitted it, or the
+   revision output was unparseable) is carried to the final round and then dropped
    and recorded, never silently lost.
 5. Repeat up to `max_rounds` revision rounds (default 2).
 6. After the final round, drop any claim that is still unsupported. A dropped

@@ -111,11 +111,15 @@ def build_event_view(events: Iterable[Event]) -> tuple[EventView, ...]:
 class RevisionRequest:
     """One rejected claim handed back to the model for revision (FR23).
 
-    Carries the original prose, what it cited, and why it was rejected, so the
-    model has a concrete hint about what to fix. It never carries new evidence: the
-    event view is unchanged across rounds.
+    Carries a stable ``claim_id``, the original prose, what it cited, and why it was
+    rejected, so the model has a concrete hint about what to fix. The model must
+    echo ``claim_id`` in the ``revises`` field of its revised claim, which is how
+    the engine matches a revision to the claim it replaces without relying on
+    ordering. It never carries new evidence: the event view is unchanged across
+    rounds.
     """
 
+    claim_id: str
     claim_text: str
     citations: tuple[str, ...]
     reason: RejectionReason
@@ -124,6 +128,7 @@ class RevisionRequest:
     def to_dict(self) -> dict[str, Any]:
         """Render the revision request as a JSON-ready dict for the model prompt."""
         return {
+            "claim_id": self.claim_id,
             "claim_text": self.claim_text,
             "citations": list(self.citations),
             "reason": self.reason.value,
@@ -344,12 +349,13 @@ def verify_narrative(
 
     Drafts claims from the compact event view, verifies each deterministically,
     accepts the supported ones, and resubmits the rejected ones for revision up to
-    ``max_rounds`` rounds. In a revision round the model is expected to return a
-    revised claim for each outstanding claim, in the same order; an outstanding
-    claim the model fails to return (an omission or unparseable output) is treated
-    as still unsupported. After the final round, every still-unsupported claim is
-    dropped (FR24) and every rejection is recorded in the audit log (FR25). The
-    model only ever sees the compact view (Hard rule 4).
+    ``max_rounds`` rounds. Each outstanding claim carries a stable id; a revision
+    references the id it fixes through its ``revises`` field, so a revision is
+    matched to the claim it replaces by id, never by position. An outstanding claim
+    that no revision addresses (the model omitted it, or the output was unparseable)
+    is carried to the final round and then dropped. After the final round, every
+    still-unsupported claim is dropped (FR24) and every rejection is recorded in the
+    audit log (FR25). The model only ever sees the compact view (Hard rule 4).
     """
     if max_rounds < 0:
         raise ValueError("max_rounds must be zero or greater")
@@ -360,37 +366,29 @@ def verify_narrative(
 
     accepted: list[VerifiedClaim] = []
     audit: list[AuditEntry] = []
-    # Each outstanding claim is the last (claim, verdict) we rejected and are
-    # awaiting a fix for. Positional order is the contract for matching revisions.
-    pending: list[tuple[Claim, ClaimVerdict]] = []
+    # Outstanding claims awaiting a fix, keyed by a stable id. The id is what a
+    # revision references (via ``revises``), so matching never depends on ordering.
+    pending: dict[str, tuple[Claim, ClaimVerdict]] = {}
+    id_counter = 0
 
-    def verify_round(
-        claims: list[Claim],
-        round_index: int,
-        *,
-        is_final: bool,
-        sink: list[tuple[Claim, ClaimVerdict]],
-    ) -> None:
-        """Verify a round's claims: accept fixes, record rejections, refill ``sink``.
-
-        Each still-unsupported claim is recorded in the audit (dropped on the final
-        round) and, when more rounds remain, appended to ``sink`` to be revised next.
-        """
-        for claim in claims:
-            verdict = verify_claim(claim, event_index, tol)
-            if verdict.ok and verdict.backing_event_id is not None:
-                accepted.append(_accept(claim, verdict.backing_event_id, round_index))
-                continue
-            audit.append(_rejection_entry(round_index, claim, verdict, dropped=is_final))
-            if not is_final:
-                sink.append((claim, verdict))
+    def assign_id() -> str:
+        nonlocal id_counter
+        claim_id = f"c{id_counter}"
+        id_counter += 1
+        return claim_id
 
     # Round 0: the initial draft.
     initial = _safe_parse(model.draft(DraftRequest(events=views, round_index=0, revisions=())))
     rounds_used = 1
-    next_pending: list[tuple[Claim, ClaimVerdict]] = []
-    verify_round(initial, round_index=0, is_final=max_rounds == 0, sink=next_pending)
-    pending = next_pending
+    round0_final = max_rounds == 0
+    for claim in initial:
+        verdict = verify_claim(claim, event_index, tol)
+        if verdict.ok and verdict.backing_event_id is not None:
+            accepted.append(_accept(claim, verdict.backing_event_id, 0))
+            continue
+        audit.append(_rejection_entry(0, claim, verdict, dropped=round0_final))
+        if not round0_final:
+            pending[assign_id()] = (claim, verdict)
 
     # Revision rounds.
     round_index = 1
@@ -398,41 +396,51 @@ def verify_narrative(
         is_final = round_index == max_rounds
         revisions = tuple(
             RevisionRequest(
+                claim_id=claim_id,
                 claim_text=claim.text,
                 citations=claim.citations,
                 reason=verdict.reason if verdict.reason is not None else RejectionReason.MISSING_ID,
                 detail=verdict.detail,
             )
-            for claim, verdict in pending
+            for claim_id, (claim, verdict) in pending.items()
         )
         revised = _safe_parse(
             model.draft(DraftRequest(events=views, round_index=round_index, revisions=revisions))
         )
         rounds_used = round_index + 1
 
-        next_pending = []
-        # Match each outstanding claim to the revision at the same position.
-        for position, (orig_claim, orig_verdict) in enumerate(pending):
-            if position < len(revised):
-                claim = revised[position]
-                verdict = verify_claim(claim, event_index, tol)
-                if verdict.ok and verdict.backing_event_id is not None:
-                    accepted.append(_accept(claim, verdict.backing_event_id, round_index))
-                    continue
-                audit.append(_rejection_entry(round_index, claim, verdict, dropped=is_final))
-                if not is_final:
-                    next_pending.append((claim, verdict))
+        carry: dict[str, tuple[Claim, ClaimVerdict]] = {}
+        addressed: set[str] = set()
+        for claim in revised:
+            # A revision targets an outstanding claim by id; anything else (no id,
+            # an unknown id, or a duplicate) is treated as a fresh claim, so it is
+            # still verified and can never slip into the report unchecked.
+            target = claim.revises if claim.revises in pending else None
+            if target is not None and target not in addressed:
+                addressed.add(target)
             else:
-                # The model returned no revision for this outstanding claim. It is
-                # still unsupported, so drop and record it (never silently lose it).
-                audit.append(_drop_entry(round_index, orig_claim, orig_verdict))
-        # Any extra claims the model added beyond the outstanding set are verified
-        # as new claims, so a revision round can never sneak an unverified claim in.
-        verify_round(
-            revised[len(pending) :], round_index=round_index, is_final=is_final, sink=next_pending
-        )
+                target = None
 
-        pending = next_pending
+            verdict = verify_claim(claim, event_index, tol)
+            if verdict.ok and verdict.backing_event_id is not None:
+                accepted.append(_accept(claim, verdict.backing_event_id, round_index))
+                continue
+            audit.append(_rejection_entry(round_index, claim, verdict, dropped=is_final))
+            # A matched revision keeps its id; a fresh claim gets a new one.
+            if not is_final:
+                carry[target if target is not None else assign_id()] = (claim, verdict)
+
+        # Outstanding claims that no revision addressed are still unsupported. Carry
+        # them to the next round, or drop and record them if this was the last one.
+        for claim_id, (claim, verdict) in pending.items():
+            if claim_id in addressed:
+                continue
+            if is_final:
+                audit.append(_drop_entry(round_index, claim, verdict))
+            else:
+                carry[claim_id] = (claim, verdict)
+
+        pending = carry
         round_index += 1
 
     return VerificationResult(

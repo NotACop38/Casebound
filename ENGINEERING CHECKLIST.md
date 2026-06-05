@@ -38,8 +38,8 @@ Exit criteria: from a clean clone, the demo ingests the synthetic Hayabusa outpu
 Goal: automated quality gates while the surface is small.
 Exit criteria: lint, type-check, and the full test suite run automatically per D3; the schema validates in CI; a secret scan runs.
 
-- [ ] [A] Per D3: either a GitHub Actions workflow (lint, mypy, pytest, schema validation, secret scan) with a status badge, or a local scripts/ci.py runner with static shields. Get the green signal.
-- [ ] [A] Add a secret-scanning step (gitleaks or detect-secrets) and a dependency audit (pip-audit) and a static check (bandit).
+- [x] [A] Per D3: either a GitHub Actions workflow (lint, mypy, pytest, schema validation, secret scan) with a status badge, or a local scripts/ci.py runner with static shields. Get the green signal.
+- [x] [A] Add a secret-scanning step (gitleaks or detect-secrets) and a dependency audit (pip-audit) and a static check (bandit).
 
 ## Phase 3 - Breadth: ingestion sources
 

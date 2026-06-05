@@ -104,8 +104,14 @@ def normalize_timestamp(raw: str, *, assume_timezone: str | None = None) -> Norm
     if parsed.tzinfo is not None and parsed.utcoffset() is not None:
         # The string fixes the instant via its offset. assume_timezone, if given,
         # only relabels; it never overrides the offset that determines the moment.
+        # The hint is still validated so a typo cannot write a bogus zone into the
+        # audit metadata of every event.
         offset = parsed.utcoffset() or timedelta(0)
-        label = assume_timezone if assume_timezone else format_utc_offset(offset)
+        if assume_timezone:
+            _resolve_zone(assume_timezone)
+            label = assume_timezone
+        else:
+            label = format_utc_offset(offset)
         return NormalizedTimestamp(_to_canonical_utc(parsed), raw, label)
 
     # No offset in the string: interpret it in the assumed zone, or fall back to

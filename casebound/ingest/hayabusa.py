@@ -9,9 +9,10 @@ See https://github.com/Yamato-Security/hayabusa/wiki.
 The adapter is a thin reader: it splits the CSV into rows and attaches provenance
 (source tool, source artifact, raw reference). It does not interpret a row into a
 canonical event; the Hayabusa mapper in ``casebound.normalize.mappers.hayabusa``
-does that. The Channel column names the originating Windows event-log channel,
-which the adapter turns into the artifact file name (for example ``Security`` to
-``Security.evtx``), so each emitted record carries the artifact it came from.
+does that. For the source artifact it prefers the ``EvtxFile`` column the verbose
+profiles emit (the exact EVTX file the event came from), and otherwise derives the
+artifact from the Channel column (for example ``Security`` to ``Security.evtx``),
+so each emitted record carries the most precise artifact available.
 
 Read-only over already-collected evidence (Hard rule 1). Style: no em dashes or en
 dashes anywhere (PRD Section 15).
@@ -93,7 +94,20 @@ class HayabusaAdapter(IngestAdapter):
         record = record_id if record_id else f"line:{line_number}"
         return RawRecord(
             source_tool=self.source_tool,
-            source_artifact=channel_to_artifact(channel),
+            source_artifact=self._artifact(data, channel),
             raw_ref=RawRef(source_file=source.name, record=record),
             data=data,
         )
+
+    @staticmethod
+    def _artifact(data: dict[str, str], channel: str) -> str:
+        """Pick the most precise source artifact available for the row.
+
+        Hayabusa's verbose, all-field-info, super-verbose, and Timesketch profiles
+        emit an ``EvtxFile`` column naming the exact EVTX file the event came from.
+        That is the strongest provenance (FR11), so it is preferred when present;
+        otherwise the artifact is derived from the Windows channel. A scan over many
+        or renamed EVTX files thus records the true file rather than a generic name.
+        """
+        evtx_file = (data.get("EvtxFile") or "").strip()
+        return evtx_file if evtx_file else channel_to_artifact(channel)

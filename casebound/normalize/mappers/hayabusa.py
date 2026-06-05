@@ -23,6 +23,14 @@ The ``event_id`` is derived by ``Event`` from the core fields, so identical
 observations collapse to one id and the normalize pipeline can de-duplicate them
 while keeping every provenance pointer (FR10, FR12).
 
+Input assumption: the Detail keys are expected in their unabbreviated Windows
+form (``SubjectUserName``, ``TargetUserName``, ``DestinationIp``, and so on), which
+is what the synthetic generator emits and what Hayabusa produces with
+``--disable-abbreviations``. Hayabusa abbreviates field names by default, so until
+an abbreviation-normalization pass lands, evidence from a default Hayabusa run
+should be generated with abbreviations disabled or the principal and object may be
+incomplete. Handling the default abbreviations is a Phase 3 breadth follow-up.
+
 Style: no em dashes or en dashes anywhere (PRD Section 15).
 """
 

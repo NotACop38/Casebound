@@ -150,6 +150,13 @@ def test_unknown_assume_timezone_raises() -> None:
         normalize_timestamp("2026-03-14 04:30:05", assume_timezone="Mars/Olympus")
 
 
+def test_unknown_assume_timezone_raises_even_with_offset() -> None:
+    # A bogus hint must be rejected even when the string already carries an offset,
+    # so a typo can never be written into the audit metadata as a real zone.
+    with pytest.raises(TimestampError):
+        normalize_timestamp("2026-03-14 04:30:05.000 -04:00", assume_timezone="Mars/Olympus")
+
+
 @pytest.mark.parametrize(
     ("minutes", "label"),
     [(0, "UTC"), (-240, "UTC-04:00"), (330, "UTC+05:30"), (60, "UTC+01:00")],
@@ -238,6 +245,26 @@ def test_adapter_uses_record_id_as_audit_handle() -> None:
 )
 def test_channel_to_artifact(channel: str, artifact: str) -> None:
     assert channel_to_artifact(channel) == artifact
+
+
+def test_adapter_prefers_evtx_file_for_artifact(tmp_path: Path) -> None:
+    # When a row carries Hayabusa's EvtxFile column, it is the exact source file and
+    # is preferred over the channel-derived name for provenance (FR11).
+    csv_text = (
+        '"Timestamp","Computer","Channel","EventID","EvtxFile","Details"\n'
+        '"2026-03-14 04:42:17.000 -04:00","WIN-ACCT-07","Security","4688",'
+        '"D:\\evidence\\host-a-Security.evtx","NewProcessName: C:\\Windows\\x.exe"\n'
+    )
+    path = tmp_path / "with_evtx.csv"
+    path.write_text(csv_text, encoding="utf-8")
+    records = list(HayabusaAdapter().read(path))
+    assert records[0].source_artifact == "D:\\evidence\\host-a-Security.evtx"
+
+
+def test_adapter_falls_back_to_channel_when_no_evtx_file() -> None:
+    # The slice fixture has no EvtxFile column, so the channel mapping is used.
+    records = list(HayabusaAdapter().read(SLICE_CSV))
+    assert records[0].source_artifact == "Security.evtx"
 
 
 def test_raw_record_rejects_unknown_source_tool() -> None:

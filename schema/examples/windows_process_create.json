@@ -1,0 +1,42 @@
+{
+  "event_id": "6fb28f7a4aa4868c10e5077dbc43226eb111bc824d953c347b6348a6c58e3c70",
+  "datetime": "2026-03-14T08:42:17Z",
+  "timestamp_raw": "2026-03-14 03:42:17",
+  "source_timezone": "America/New_York",
+  "timestamp_desc": "logged",
+  "message": "winword.exe spawned powershell.exe with an encoded command",
+  "host": "WIN-ACCT-07",
+  "principal": "CORP\\jdoe",
+  "action": "process_create",
+  "object": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+  "source_tool": "hayabusa",
+  "source_artifact": "Security.evtx",
+  "details": {
+    "process_id": 6042,
+    "parent_process_id": 4188,
+    "parent_image": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+    "command_line": "powershell.exe -nop -w hidden -enc SQBFAFgA",
+    "event_id": 4688
+  },
+  "attack_techniques": [
+    {
+      "technique_id": "T1059.001",
+      "mapping_source": "rule_tag"
+    },
+    {
+      "technique_id": "T1566.001",
+      "mapping_source": "mapping_table"
+    }
+  ],
+  "ioc_refs": [
+    "ioc-0007"
+  ],
+  "confidence": 0.95,
+  "raw_ref": {
+    "source_file": "hayabusa-timeline.csv",
+    "record": "1487"
+  },
+  "tags": [
+    "episode-initial-access"
+  ]
+}

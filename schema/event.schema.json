@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://casebound.dev/schema/event.schema.json",
+  "title": "Casebound canonical event",
+  "description": "Canonical timeline event v0.1 (PRD Section 10). The validation source of truth, mirrored by casebound/normalize/schema.py. Every factual claim in a report must resolve to one of these events by event_id.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "datetime",
+    "timestamp_raw",
+    "source_timezone",
+    "timestamp_desc",
+    "message",
+    "host",
+    "principal",
+    "action",
+    "object",
+    "source_tool",
+    "source_artifact",
+    "details",
+    "attack_techniques",
+    "ioc_refs",
+    "confidence",
+    "raw_ref",
+    "tags"
+  ],
+  "properties": {
+    "event_id": {
+      "description": "Stable content hash (SHA-256 hex) of the normalized core fields. Always derived, never authored.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "datetime": {
+      "description": "ISO 8601 timestamp normalized to UTC, with a trailing Z.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    },
+    "timestamp_raw": {
+      "description": "The original timestamp string exactly as found in the source.",
+      "type": "string",
+      "minLength": 1
+    },
+    "source_timezone": {
+      "description": "The timezone used to derive datetime (an IANA name such as America/New_York, or UTC, or the literal assumed_utc when no zone was known).",
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp_desc": {
+      "description": "How the timestamp relates to the event.",
+      "type": "string",
+      "enum": ["created", "modified", "accessed", "logged", "other"]
+    },
+    "message": {
+      "description": "A short human-readable summary of the event.",
+      "type": "string",
+      "minLength": 1
+    },
+    "host": {
+      "description": "Hostname or system identifier, or null when unknown.",
+      "type": ["string", "null"]
+    },
+    "principal": {
+      "description": "Account, user, or SID associated with the event, or null when unknown.",
+      "type": ["string", "null"]
+    },
+    "action": {
+      "description": "A normalized snake_case verb, for example process_create, logon, file_write.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "object": {
+      "description": "The primary target (process path, file path, registry key, remote endpoint), or null when not applicable.",
+      "type": ["string", "null"]
+    },
+    "source_tool": {
+      "description": "The tool whose output produced the record.",
+      "type": "string",
+      "enum": [
+        "hayabusa",
+        "eztools",
+        "chainsaw",
+        "velociraptor",
+        "plaso",
+        "generic_csv",
+        "dissect"
+      ]
+    },
+    "source_artifact": {
+      "description": "The originating artifact, for example Security.evtx, $MFT, NTUSER.dat UserAssist.",
+      "type": "string",
+      "minLength": 1
+    },
+    "details": {
+      "description": "A structured object holding source-specific fields.",
+      "type": "object"
+    },
+    "attack_techniques": {
+      "description": "ATT&CK mappings, each recording its technique id and how the mapping was made.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["technique_id", "mapping_source"],
+        "properties": {
+          "technique_id": {
+            "description": "ATT&CK technique or sub-technique id, for example T1059 or T1059.001.",
+            "type": "string",
+            "pattern": "^T\\d{4}(\\.\\d{3})?$"
+          },
+          "mapping_source": {
+            "description": "How the mapping was made, for example rule_tag or mapping_table.",
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "ioc_refs": {
+      "description": "References into the extracted IOC set.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "confidence": {
+      "description": "Normalization and mapping confidence, 0 to 1.",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "raw_ref": {
+      "description": "Pointer back to the source record for audit: the source file plus a record or line identifier.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_file", "record"],
+      "properties": {
+        "source_file": {
+          "description": "The source file or export the record came from.",
+          "type": "string",
+          "minLength": 1
+        },
+        "record": {
+          "description": "Line number or record id within the source file.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "tags": {
+      "description": "Free-form labels, for example an episode id or analyst tags.",
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

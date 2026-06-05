@@ -54,6 +54,19 @@ A namespace string that includes the schema version is folded into the hashed
 content, so ids cannot silently collide across future schema versions. A `null`
 core field hashes the same as an empty string.
 
+The `datetime` is canonicalized before it is hashed: it is parsed to a real UTC
+instant and re-rendered in one fixed representation, with sub-second precision
+preserved but trailing zeros trimmed. So `2026-03-14T08:42:17Z` and
+`2026-03-14T08:42:17.000Z` are the same instant, canonicalize to the same
+string, and produce the same `event_id`, while a genuinely different instant such
+as `2026-03-14T08:42:17.5Z` produces a different id. Impossible calendar instants
+are rejected outright.
+
+The record is immutable once constructed. Core identity fields cannot be
+reassigned, so an `event_id` can never drift out of sync with the fields it
+hashes; enrichment that adds tags or technique mappings builds a new event or
+mutates list contents in place rather than rebinding a core field.
+
 Two consequences follow, and they are exactly the guarantees the verifier relies
 on:
 

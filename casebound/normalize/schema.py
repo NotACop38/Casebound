@@ -198,6 +198,42 @@ def _normalize_id_value(value: Any) -> str:
     return str(value)
 
 
+def _parse_strict_utc(value: str) -> _datetime:
+    """Parse a canonical UTC datetime string into a real instant.
+
+    Accepts only the shape the schema allows (ISO 8601 with a trailing Z) and
+    rejects impossible calendar instants such as 2026-99-99T99:99:99Z. Fractional
+    seconds longer than microsecond precision are truncated for parsing. Raises
+    ``ValueError`` on anything that is not a real UTC instant.
+    """
+    if not isinstance(value, str) or not _DATETIME_RE.match(value):
+        raise ValueError(f"datetime must be ISO 8601 UTC with a trailing Z, got {value!r}")
+    core = value[:-1]  # drop the trailing Z
+    if "." in core:
+        head, frac = core.split(".", 1)
+        iso = f"{head}.{(frac + '000000')[:6]}+00:00"
+    else:
+        iso = f"{core}+00:00"
+    # fromisoformat rejects out-of-range months, days, hours, and so on, so this
+    # is where impossible instants are caught.
+    return _datetime.fromisoformat(iso)
+
+
+def _canonical_utc_datetime(value: str) -> str:
+    """Return the one canonical string for the instant ``value`` denotes.
+
+    Sub-second precision is preserved but represented uniquely (trailing zeros
+    trimmed), so 2026-03-14T08:42:17Z and 2026-03-14T08:42:17.000Z collapse to a
+    single representation. This is what makes the same instant hash to the same
+    event_id regardless of how a source spelled it.
+    """
+    instant = _parse_strict_utc(value)
+    base = instant.strftime("%Y-%m-%dT%H:%M:%S")
+    if instant.microsecond:
+        return f"{base}.{instant.microsecond:06d}".rstrip("0") + "Z"
+    return f"{base}Z"
+
+
 def compute_event_id(core: Mapping[str, Any]) -> str:
     """Return the stable content hash for a set of core identity fields.
 
@@ -215,13 +251,18 @@ def compute_event_id(core: Mapping[str, Any]) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-@dataclass
+@dataclass(frozen=True)
 class Event:
     """The canonical timeline event (PRD Section 10).
 
-    Construct one with the observed and normalized fields; ``event_id`` is
-    derived in ``__post_init__`` and any value passed in is recomputed, so the id
-    is always a faithful hash of the core fields.
+    Construct one with the observed and normalized fields; ``datetime`` is
+    canonicalized and ``event_id`` is derived in ``__post_init__``, so the id is
+    always a faithful hash of the core fields.
+
+    The record is frozen: core identity fields cannot be reassigned after
+    construction, so an event_id can never drift out of sync with the fields it
+    hashes. Enrichment that adds tags or technique mappings constructs a new
+    event or mutates the list contents in place rather than rebinding a field.
     """
 
     datetime: str
@@ -244,21 +285,19 @@ class Event:
     event_id: str = ""
 
     def __post_init__(self) -> None:
+        # Canonicalize the timestamp first so the stored field and the hashed
+        # value always agree, then derive the id. The record is frozen, so these
+        # assignments go through object.__setattr__.
+        try:
+            canonical = _canonical_utc_datetime(self.datetime)
+        except ValueError as exc:
+            raise SchemaError(str(exc)) from exc
+        object.__setattr__(self, "datetime", canonical)
         self._validate()
         # The id is always derived, never trusted from input.
-        self.event_id = self.compute_id()
+        object.__setattr__(self, "event_id", self.compute_id())
 
     def _validate(self) -> None:
-        if not _DATETIME_RE.match(self.datetime):
-            raise SchemaError(
-                f"datetime must be ISO 8601 UTC with a trailing Z, got {self.datetime!r}"
-            )
-        # Confirm it is a real instant, not just well-shaped text.
-        try:
-            _datetime.fromisoformat(self.datetime.replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise SchemaError(f"datetime is not a valid timestamp: {self.datetime!r}") from exc
-
         _require_non_empty("timestamp_raw", self.timestamp_raw)
         _require_non_empty("source_timezone", self.source_timezone)
         _require_non_empty("message", self.message)
@@ -273,7 +312,7 @@ class Event:
             raise SchemaError(
                 f"source_tool must be one of {sorted(SOURCE_TOOLS)}, got {self.source_tool!r}"
             )
-        if not _ACTION_RE.match(self.action):
+        if not isinstance(self.action, str) or not _ACTION_RE.match(self.action):
             raise SchemaError(
                 f"action must be a snake_case verb like process_create, got {self.action!r}"
             )
@@ -334,35 +373,39 @@ class Event:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Event:
-        """Build an Event from a dict, recomputing and verifying the event_id.
+        """Build an Event from a complete, serialized event dict.
 
-        Any ``event_id`` present in the input is checked against the freshly
-        derived id and a mismatch is an error, so a tampered or stale id never
-        passes silently.
+        The dict is first validated against the JSON Schema source of truth, so
+        a null in a required string field or a string where an array is expected
+        is rejected rather than silently coerced (``str(None)`` would otherwise
+        become "None", and ``list("abc")`` would split into characters). The
+        stored ``event_id`` is then checked against the freshly derived id, so a
+        tampered or stale id never passes silently.
         """
+        validate_event_dict(data)
         event = cls(
-            datetime=str(data["datetime"]),
-            timestamp_raw=str(data["timestamp_raw"]),
-            source_timezone=str(data["source_timezone"]),
-            timestamp_desc=str(data["timestamp_desc"]),
-            message=str(data["message"]),
-            action=str(data["action"]),
-            source_tool=str(data["source_tool"]),
-            source_artifact=str(data["source_artifact"]),
+            datetime=data["datetime"],
+            timestamp_raw=data["timestamp_raw"],
+            source_timezone=data["source_timezone"],
+            timestamp_desc=data["timestamp_desc"],
+            message=data["message"],
+            action=data["action"],
+            source_tool=data["source_tool"],
+            source_artifact=data["source_artifact"],
             raw_ref=RawRef.from_dict(data["raw_ref"]),
-            host=data.get("host"),
-            principal=data.get("principal"),
-            object=data.get("object"),
-            details=dict(data.get("details", {})),
+            host=data["host"],
+            principal=data["principal"],
+            object=data["object"],
+            details=dict(data["details"]),
             attack_techniques=[
-                AttackTechnique.from_dict(item) for item in data.get("attack_techniques", [])
+                AttackTechnique.from_dict(item) for item in data["attack_techniques"]
             ],
-            ioc_refs=list(data.get("ioc_refs", [])),
-            confidence=float(data.get("confidence", 1.0)),
-            tags=list(data.get("tags", [])),
+            ioc_refs=list(data["ioc_refs"]),
+            confidence=float(data["confidence"]),
+            tags=list(data["tags"]),
         )
-        provided = data.get("event_id")
-        if provided is not None and provided != event.event_id:
+        provided = data["event_id"]
+        if provided != event.event_id:
             raise SchemaError(
                 f"event_id mismatch: provided {provided!r} but core fields hash to "
                 f"{event.event_id!r}"
@@ -380,7 +423,17 @@ def load_schema() -> dict[str, Any]:
 def validate_event_dict(data: Mapping[str, Any]) -> None:
     """Validate a dict against schema/event.schema.json.
 
-    Raises ``jsonschema.ValidationError`` on the first problem. This is the
-    structural gate that ingest output and report input both pass through.
+    Runs the structural JSON Schema gate, then a semantic check that ``datetime``
+    is a real UTC instant (the schema regex matches the shape but cannot reject
+    an impossible calendar date such as 2026-99-99T99:99:99Z, which would
+    otherwise drift from the dataclass validator). Raises
+    ``jsonschema.ValidationError`` on the first problem. This is the gate that
+    ingest output and report input both pass through.
     """
     jsonschema.Draft202012Validator(load_schema()).validate(dict(data))
+    try:
+        _parse_strict_utc(data["datetime"])
+    except (ValueError, KeyError, TypeError) as exc:
+        raise jsonschema.ValidationError(
+            f"datetime is not a real UTC instant: {data.get('datetime')!r}"
+        ) from exc

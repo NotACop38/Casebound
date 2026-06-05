@@ -11,6 +11,7 @@ These cover the four properties the schema must hold from day one:
 from __future__ import annotations
 
 import json
+from dataclasses import FrozenInstanceError
 from typing import Any
 
 import jsonschema
@@ -211,6 +212,64 @@ def test_two_distinct_events_do_not_collide() -> None:
         message="Successful network logon",
     )
     assert process_create.event_id != logon.event_id
+
+
+# Integrity hardening: the id stays a faithful handle to the core fields.
+
+
+def test_event_is_frozen() -> None:
+    # Core identity fields cannot be reassigned, so the id can never go stale.
+    event = make_event()
+    with pytest.raises(FrozenInstanceError):
+        event.action = "logon"  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        event.event_id = "0" * 64  # type: ignore[misc]
+
+
+def test_timestamp_is_canonicalized() -> None:
+    # The same instant spelled with redundant fractional zeros canonicalizes to
+    # one representation and so yields one id.
+    plain = make_event(datetime="2026-03-14T08:42:17Z")
+    padded = make_event(datetime="2026-03-14T08:42:17.000Z")
+    assert padded.datetime == "2026-03-14T08:42:17Z"
+    assert padded.event_id == plain.event_id
+
+
+def test_subsecond_precision_is_preserved_and_distinguishes_events() -> None:
+    # Real sub-second precision is kept, so two close-but-distinct events do not
+    # collide.
+    whole = make_event(datetime="2026-03-14T08:42:17Z")
+    fractional = make_event(datetime="2026-03-14T08:42:17.5Z")
+    assert fractional.datetime == "2026-03-14T08:42:17.5Z"
+    assert fractional.event_id != whole.event_id
+
+
+def test_impossible_instant_is_rejected_by_dataclass() -> None:
+    with pytest.raises(SchemaError):
+        make_event(datetime="2026-02-30T08:42:17Z")
+
+
+def test_impossible_instant_is_rejected_by_json_schema() -> None:
+    data = make_event().to_dict()
+    data["datetime"] = "2026-99-99T99:99:99Z"  # matches the shape, not a real instant
+    with pytest.raises(jsonschema.ValidationError):
+        validate_event_dict(data)
+
+
+def test_from_dict_rejects_string_where_array_expected() -> None:
+    # A scalar ioc_refs must not be split into single-character references.
+    data = make_event().to_dict()
+    data["ioc_refs"] = "ioc-0007"
+    with pytest.raises(jsonschema.ValidationError):
+        Event.from_dict(data)
+
+
+def test_from_dict_rejects_null_required_string() -> None:
+    # A null in a required string field must fail, not become the literal "None".
+    data = make_event().to_dict()
+    data["timestamp_raw"] = None
+    with pytest.raises(jsonschema.ValidationError):
+        Event.from_dict(data)
 
 
 # Schema document sanity.

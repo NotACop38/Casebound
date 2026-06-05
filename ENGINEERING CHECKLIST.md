@@ -26,7 +26,7 @@ Exit criteria: from a clean clone, the demo ingests the synthetic Hayabusa outpu
 - [x] [A] Implement the synthetic evidence generator (PRD FR33) for ONE scenario, emitting Hayabusa-style CSV plus a ground-truth label file.
 - [x] [A] Implement the base ingest adapter interface and the Hayabusa adapter (FR1, FR2).
 - [x] [A] Implement normalization to the canonical schema with UTC timezone handling and stable event ids (FR8 to FR11).
-- [ ] [A] Implement deterministic ATT&CK tagging via rule-tag passthrough plus a small mapping table (FR13, FR14).
+- [x] [A] Implement deterministic ATT&CK tagging via rule-tag passthrough plus a small mapping table (FR13, FR14).
 - [ ] [D] Define the claim and citation format and the field-consistency check rules; write docs/verification.md.
 - [ ] [A] Implement the claims parser, the consistency checks, and the generate-test-refine engine (FR17 to FR25), with a mocked model provider for tests.
 - [ ] [A] Implement the hallucination-trap fixture and test (FR35): assert a seeded fabricated claim is rejected and a grounded claim is accepted.

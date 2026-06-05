@@ -6,6 +6,7 @@
 
 Casebound turns raw host triage into a normalized forensic timeline, maps it to MITRE ATT&CK, and then writes an investigation narrative in which every claim is checked against a real event or thrown out before you ever see it.
 
+[![ci](https://github.com/NotACop38/Casebound/actions/workflows/ci.yml/badge.svg)](https://github.com/NotACop38/Casebound/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![status](https://img.shields.io/badge/status-alpha-orange)

@@ -265,7 +265,7 @@ Credibility checklist:
 
 - D1 Name. Chosen: Casebound (see header). Action: confirm GitHub and PyPI availability before registering; fall back to Cairn or Probative only if taken.
 - D2 License. Lean: Apache-2.0 for the core (consistent with Sextant). Constraint: Dissect is AGPL-3.0, so keep the optional Raw-mode path isolated, or be prepared to license that path AGPL. Decide before Raw mode begins.
-- D3 CI convention. Option A: GitHub Actions for a green status badge (favored for a public visibility repo; the demo runs offline regardless). Option B: the local-runner convention from your last two projects (scripts/ci.py, no hosted CI, static shields only). Pick one.
+- D3 CI convention. Chosen: Option A, GitHub Actions for a green status badge (favored for a public-visibility repo; the demo runs offline regardless). Option B, the local-runner convention (scripts/ci.py, no hosted CI, static shields only), was the alternative. The same gate (scripts/ci.py) runs both locally and in the workflow, so the contract holds either way. See .github/workflows/ci.yml and the README badge.
 - D4 Optional web UI. Lean: include a minimal FastAPI plus timeline viewer as a stretch after the core is solid, for the capstone wow factor; reuse the report layer unchanged.
 - D5 Cloud redaction depth. Lean: conservative default (strip message and details free-text and obvious IOCs and usernames before any cloud call), fully documented and configurable.
 

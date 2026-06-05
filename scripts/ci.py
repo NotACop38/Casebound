@@ -8,13 +8,15 @@ Runs the offline quality checks that every later step can rely on:
   3. mypy         : strict-ish type check
   4. pytest       : the test suite (no network, no API keys)
   5. schema       : JSON Schema validation (placeholder until the schema exists)
-  6. secrets      : a secret scan over git-tracked files
-  7. deps         : a dependency audit of the declared dependencies (pip-audit)
+  6. secrets      : a secret scan over git-tracked files (detect-secrets)
+  7. bandit       : a static security scan over the first-party Python code
+  8. deps         : a dependency audit of the declared dependencies (pip-audit)
 
-The first six steps run fully offline with no API keys. The dependency audit
-reaches the advisory service when online and skips gracefully when offline (or
-when pip-audit is not installed), so the gate stays green without a network. The
-static security checks (bandit) live in `make security`.
+Every step except the dependency audit runs fully offline with no API keys. The
+dependency audit reaches the advisory service when online and skips gracefully
+when offline (or when pip-audit is not installed), so the gate stays green
+without a network. `make security` layers the defensive-scope invariants on top
+of this same gate.
 
 Usage: python scripts/ci.py
 Exit code is 0 only if every step passes.
@@ -168,6 +170,22 @@ def check_secrets() -> bool:
     return _builtin_secret_scan(files)
 
 
+def check_bandit() -> bool:
+    """Run the bandit static security scan over the first-party Python code.
+
+    Scoped to casebound/ and scripts/ (our own code, not dependencies), bandit is
+    fully offline and key-free. Inline `# nosec` annotations document the reviewed
+    exceptions; any unsuppressed finding fails the gate.
+    """
+    _print_header("bandit (static security)")
+    # Fixed command over first-party source dirs; no shell, no untrusted input.
+    cmd = [sys.executable, "-m", "bandit", "-q", "-r", "casebound", "scripts"]
+    result = subprocess.run(cmd, cwd=ROOT)  # nosec B603
+    ok = result.returncode == 0
+    print("PASS" if ok else f"FAIL (exit {result.returncode})")
+    return ok
+
+
 def _declared_dependencies() -> list[str]:
     """Collect the project's declared runtime and dev dependencies from pyproject."""
     data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
@@ -248,6 +266,7 @@ def main() -> int:
     results.append(("pytest", run_cmd("pytest (tests)", [py, "-m", "pytest"])))
     results.append(("schema", check_schema()))
     results.append(("secrets", check_secrets()))
+    results.append(("bandit", check_bandit()))
     results.append(("dependency audit", check_dependency_audit()))
 
     print("\n==> CI summary")

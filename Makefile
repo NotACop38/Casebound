@@ -19,12 +19,11 @@ test:  ## pytest, all green, no network, no API keys.
 demo:  ## Run the full pipeline on the bundled synthetic scenario, offline.
 	$(PYTHON) -m casebound.cli demo
 
-ci:  ## The gate: lint, test, schema validation, secret scan, and a dependency audit.
+ci:  ## The gate: lint, test, schema validation, secret scan, bandit, and a dependency audit.
 	$(PYTHON) scripts/ci.py
 
-security:  ## The gate plus bandit, and the defensive-scope invariants.
+security:  ## The gate (which includes the secret scan, bandit, and pip-audit) plus the defensive-scope invariants.
 	$(PYTHON) scripts/ci.py
-	$(PYTHON) -m bandit -q -r casebound scripts
 	@echo "security: defensive-scope invariant tests land in Phase 6 (see ENGINEERING CHECKLIST.md)."
 
 clean:  ## Remove caches and build artifacts.

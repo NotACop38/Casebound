@@ -1,0 +1,31 @@
+# Casebound CI gate. Per PRD decision D3 (Option A), this hosted workflow is the
+# single source of truth behind the status badge. It does nothing but install the
+# pinned toolchain and run `make ci`, so the local gate and the badge can never
+# disagree. No secrets, no API keys: the gate is offline and key-free by design.
+name: ci
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install the package and pinned dev dependencies
+        run: make install
+
+      - name: Run the gate
+        run: make ci

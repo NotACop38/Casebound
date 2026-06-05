@@ -76,6 +76,11 @@ select = [
     "RUF", # ruff-specific
 ]
 
+[tool.ruff.lint.flake8-bugbear]
+# Typer declares CLI parameters with calls in argument defaults by design; these
+# are evaluated once and are effectively immutable singletons.
+extend-immutable-calls = ["typer.Argument", "typer.Option"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true

@@ -102,3 +102,6 @@ minversion = "8.0"
 testpaths = ["tests"]
 addopts = "-ra -q"
 # Keep the suite hermetic: no network, no API keys.
+markers = [
+    "invariant: defensive-scope invariant tests (PRD Section 6, Hard rule 1); run as a named step by 'make security'.",
+]

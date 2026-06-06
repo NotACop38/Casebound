@@ -79,9 +79,9 @@ Exit criteria: the pipeline produces a full deterministic report with no model c
 Goal: prove the defensive scope in code, not just prose.
 Exit criteria: invariant tests enforce the non-goals; SECURITY.md and the threat model exist.
 
-- [ ] [A] Invariant test: the codebase performs no acquisition, no remote collection, no execution of suspect binaries, and no remediation (scan for and forbid the relevant calls; document the invariant).
-- [ ] [A] Invariant test: in the no-key demo path there are no outbound network calls.
-- [ ] [A] Write docs/threat-model.md and SECURITY.md restating the defensive scope and non-goals (PRD Section 6).
+- [x] [A] Invariant test: the codebase performs no acquisition, no remote collection, no execution of suspect binaries, and no remediation (scan for and forbid the relevant calls; document the invariant).
+- [x] [A] Invariant test: in the no-key demo path there are no outbound network calls.
+- [x] [A] Write docs/threat-model.md and SECURITY.md restating the defensive scope and non-goals (PRD Section 6).
 
 ## Phase 7 - README visual polish
 

@@ -12,7 +12,7 @@
 Goal: lock the keystone decisions and stand up an empty-but-correct skeleton.
 Exit criteria: schema v0.1 committed and validating; repo skeleton builds; pytest runs (even with zero adapters); deps pinned; the CI convention is chosen.
 
-- [ ] [D] Confirm blocking decisions: D1 name, D2 license, D3 CI convention. (D4 and D5 can wait.)
+- [x] [D] Confirm blocking decisions: D1 name, D2 license, D3 CI convention. (Recorded in PRD Section 17: D1 Casebound, D2 Apache-2.0, D3 GitHub Actions plus the same local gate. D5 redaction depth is also resolved. The only residual is D1's external name-availability check on GitHub and PyPI, a manual-only step below.)
 - [x] [D] Sign off the canonical event schema v0.1 field set (PRD Section 10).
 - [x] [A] Scaffold the package per PRD Section 13 (modules as empty-but-importable), pyproject.toml with pinned deps, LICENSE per D2, .gitignore, .env.example, Makefile, ruff and mypy config, pre-commit, README stub.
 - [x] [A] Write schema/event.schema.json (JSON Schema) from PRD Section 10, plus docs/schema.md with two worked examples.

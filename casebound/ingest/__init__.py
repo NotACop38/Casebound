@@ -4,15 +4,17 @@ Adapters read already-collected tool output (CSV or JSON timelines) and emit raw
 provenance-bearing records ready for normalization. They never acquire, never
 collect remotely, and never execute anything (Hard rule 1, defensive scope).
 
-The base interface (``IngestAdapter``, ``RawRecord``) lives in ``base``. The first
-concrete adapter is ``HayabusaAdapter`` for Hayabusa csv-timeline output; the
-``EZToolsAdapter`` reads Eric Zimmerman / Timeline Explorer MFTECmd CSV.
+The base interface (``IngestAdapter``, ``RawRecord``) lives in ``base``. The
+tool-output adapters exported here cover the sources responders run during
+collection (PRD Section 13): hayabusa, eztools, chainsaw, velociraptor, plaso, and
+the column-mapped generic_csv. Each ships with a fixture and a normalization golden
+test.
 
-Planned adapters (PRD Section 13): base, hayabusa, eztools, chainsaw,
-velociraptor, plaso, generic_csv.
-
-TODO(Phase 3): add the remaining source adapters, each with a fixture and a
-  normalization golden test.
+The optional raw-artifact adapters (parsing EVTX and the NTFS ``$MFT`` directly
+with Dissect) deliberately do not appear here. They live in the isolated
+``casebound.ingest.raw`` subpackage and are imported only from there, so the
+AGPL-licensed Dissect dependency stays off the core import path (decision D2). See
+``docs/raw-mode.md``.
 """
 
 from __future__ import annotations

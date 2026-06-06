@@ -1,0 +1,67 @@
+{
+  "comment": "Synthetic flattened EVTX records as dissect.eventlog yields them (a KeyValueCollection per record, System children plus EventData entries keyed by name). Each entry names the .evtx artifact the record came from. The test feeds fields through evtx_record_to_raw and the Dissect mapper to produce dissect_evtx.events.json. No real data.",
+  "records": [
+    {
+      "artifact": "Security.evtx",
+      "fields": {
+        "Provider_Name": "Microsoft-Windows-Security-Auditing",
+        "EventID": "4688",
+        "Version": "2",
+        "Level": "0",
+        "Task": "13312",
+        "Channel": "Security",
+        "Computer": "WIN-ACCT-07",
+        "TimeCreated_SystemTime": "2026-03-14T08:42:17.123456+00:00",
+        "EventRecordID": "80038",
+        "SubjectUserName": "jdoe",
+        "SubjectDomainName": "CORP",
+        "NewProcessName": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+        "ParentProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+        "CommandLine": "powershell.exe -nop -w hidden -enc SQBFAFgA"
+      }
+    },
+    {
+      "artifact": "Microsoft-Windows-Sysmon%4Operational.evtx",
+      "fields": {
+        "Provider_Name": "Microsoft-Windows-Sysmon",
+        "EventID": "3",
+        "Channel": "Microsoft-Windows-Sysmon/Operational",
+        "Computer": "WIN-ACCT-07",
+        "TimeCreated_SystemTime": "2026-03-14T08:43:05+00:00",
+        "EventRecordID": "80114",
+        "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+        "DestinationHostname": "sync-update.example",
+        "DestinationIp": "203.0.113.77",
+        "DestinationPort": "443",
+        "User": "CORP\\jdoe"
+      }
+    },
+    {
+      "artifact": "Security.evtx",
+      "fields": {
+        "Provider_Name": "Microsoft-Windows-Security-Auditing",
+        "EventID": "4624",
+        "Channel": "Security",
+        "Computer": "WIN-FILE-02",
+        "TimeCreated_SystemTime": "2026-03-14T08:55:03+00:00",
+        "EventRecordID": "80356",
+        "TargetUserName": "svc-backup",
+        "TargetDomainName": "CORP",
+        "IpAddress": "10.4.12.66",
+        "LogonType": "3"
+      }
+    },
+    {
+      "artifact": "Application.evtx",
+      "fields": {
+        "Provider_Name": "SomeApplication",
+        "EventID": "9999",
+        "Channel": "Application",
+        "Computer": "WIN-FILE-02",
+        "TimeCreated_SystemTime": "2026-03-14T09:11:00+00:00",
+        "EventRecordID": "80701",
+        "Foo": "bar"
+      }
+    }
+  ]
+}

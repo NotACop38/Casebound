@@ -98,8 +98,8 @@ Exit criteria: every embedded asset and code snippet exists on disk; the guarant
 Goal: ingest raw artifacts directly for users who have not pre-run the tools.
 Exit criteria: at least EVTX and one more artifact parse directly into the schema; the D2 license decision is honored and isolated.
 
-- [ ] [D] Confirm D2: accept AGPL for this path, or isolate it as a separate optional package or process.
-- [ ] [A] Implement Dissect-backed adapters for EVTX and one more artifact type (for example MFT or registry), reusing the same normalization.
+- [x] [D] Confirm D2: accept AGPL for this path, or isolate it as a separate optional package or process. (Isolated: Dissect is an opt-in `raw` extra, all Dissect code lives in `casebound/ingest/raw` with lazy imports off the core import graph, and `tests/test_license_boundary.py` enforces the boundary. The core stays Apache-2.0. See PRD D2 and `docs/raw-mode.md`.)
+- [x] [A] Implement Dissect-backed adapters for EVTX and one more artifact type (for example MFT or registry), reusing the same normalization. (EVTX via `dissect.eventlog` and NTFS `$MFT` via `dissect.ntfs`, both into the canonical schema through the registered `dissect` mapper, with fixtures and golden tests in `tests/test_dissect_raw.py`. Dissect APIs re-verified at author time.)
 
 ## Phase 9 - Optional web UI (stretch)
 

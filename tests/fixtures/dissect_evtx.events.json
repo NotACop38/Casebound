@@ -1,0 +1,136 @@
+{
+  "event_count": 4,
+  "events": [
+    {
+      "event_id": "41813a10b77bcc7df71b51f39946ec5f15a3dbefd0d569ac1fe161bdc8d9b1ee",
+      "datetime": "2026-03-14T08:42:17.123456Z",
+      "timestamp_raw": "2026-03-14T08:42:17.123456+00:00",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "Microsoft-Windows-Security-Auditing event 4688 on WIN-ACCT-07",
+      "host": "WIN-ACCT-07",
+      "principal": "CORP\\jdoe",
+      "action": "process_create",
+      "object": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "source_tool": "dissect",
+      "source_artifact": "Security.evtx",
+      "details": {
+        "win_event_id": 4688,
+        "channel": "Security",
+        "fields": {
+          "SubjectUserName": "jdoe",
+          "SubjectDomainName": "CORP",
+          "NewProcessName": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+          "ParentProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+          "CommandLine": "powershell.exe -nop -w hidden -enc SQBFAFgA"
+        },
+        "provider": "Microsoft-Windows-Security-Auditing"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "Security.evtx",
+        "record": "80038"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "83eefb50a0be6227de5047acf1adb359b84821c01ffb31e8634d0a25bec78e88",
+      "datetime": "2026-03-14T08:43:05Z",
+      "timestamp_raw": "2026-03-14T08:43:05+00:00",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "Microsoft-Windows-Sysmon event 3 on WIN-ACCT-07",
+      "host": "WIN-ACCT-07",
+      "principal": "CORP\\jdoe",
+      "action": "network_connect",
+      "object": "203.0.113.77:443",
+      "source_tool": "dissect",
+      "source_artifact": "Microsoft-Windows-Sysmon%4Operational.evtx",
+      "details": {
+        "win_event_id": 3,
+        "channel": "Microsoft-Windows-Sysmon/Operational",
+        "fields": {
+          "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+          "DestinationHostname": "sync-update.example",
+          "DestinationIp": "203.0.113.77",
+          "DestinationPort": "443",
+          "User": "CORP\\jdoe"
+        },
+        "provider": "Microsoft-Windows-Sysmon"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "Microsoft-Windows-Sysmon%4Operational.evtx",
+        "record": "80114"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "ce3c57e77b7dd1c306ac5c7ef894d657ddde56f3421c6ce7d3aabef225014036",
+      "datetime": "2026-03-14T08:55:03Z",
+      "timestamp_raw": "2026-03-14T08:55:03+00:00",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "Microsoft-Windows-Security-Auditing event 4624 on WIN-FILE-02",
+      "host": "WIN-FILE-02",
+      "principal": "CORP\\svc-backup",
+      "action": "logon",
+      "object": "10.4.12.66",
+      "source_tool": "dissect",
+      "source_artifact": "Security.evtx",
+      "details": {
+        "win_event_id": 4624,
+        "channel": "Security",
+        "fields": {
+          "TargetUserName": "svc-backup",
+          "TargetDomainName": "CORP",
+          "IpAddress": "10.4.12.66",
+          "LogonType": "3"
+        },
+        "provider": "Microsoft-Windows-Security-Auditing"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "Security.evtx",
+        "record": "80356"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "3ad75386ca23068eeabce1bf3d5f3cd8d9312f9fba26c7eac07f1427d2c3c119",
+      "datetime": "2026-03-14T09:11:00Z",
+      "timestamp_raw": "2026-03-14T09:11:00+00:00",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "SomeApplication event 9999 on WIN-FILE-02",
+      "host": "WIN-FILE-02",
+      "principal": null,
+      "action": "other",
+      "object": null,
+      "source_tool": "dissect",
+      "source_artifact": "Application.evtx",
+      "details": {
+        "win_event_id": 9999,
+        "channel": "Application",
+        "fields": {
+          "Foo": "bar"
+        },
+        "provider": "SomeApplication"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 0.5,
+      "raw_ref": {
+        "source_file": "Application.evtx",
+        "record": "80701"
+      },
+      "tags": []
+    }
+  ]
+}

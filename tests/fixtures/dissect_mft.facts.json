@@ -1,0 +1,41 @@
+{
+  "comment": "Synthetic MftFileFacts as _facts_from_record distils from dissect.ntfs MftRecord objects: the file identity plus the four Standard Information timestamps (ISO 8601, or null when absent). The test expands these via mft_facts_to_raws and the Dissect mapper to produce dissect_mft.events.json. No real data.",
+  "facts": [
+    {
+      "segment": 8042,
+      "sequence": "3",
+      "path": "Users/jdoe/Downloads/invoice.exe",
+      "file_name": "invoice.exe",
+      "is_dir": false,
+      "file_size": "54321",
+      "created": "2026-03-14T08:44:12.123456+00:00",
+      "modified": "2026-03-14T08:50:00+00:00",
+      "accessed": "2026-03-14T08:51:00+00:00",
+      "record_changed": "2026-03-14T08:50:01+00:00"
+    },
+    {
+      "segment": 9001,
+      "sequence": "5",
+      "path": "Users/jdoe/Documents/report.docx",
+      "file_name": "report.docx",
+      "is_dir": false,
+      "file_size": "22222",
+      "created": "2026-03-13T17:02:00+00:00",
+      "modified": "2026-03-14T08:30:00+00:00",
+      "accessed": null,
+      "record_changed": "2026-03-14T08:30:01+00:00"
+    },
+    {
+      "segment": 100,
+      "sequence": "1",
+      "path": "Windows/Temp",
+      "file_name": "Temp",
+      "is_dir": true,
+      "file_size": null,
+      "created": "2026-03-10T06:00:00+00:00",
+      "modified": null,
+      "accessed": null,
+      "record_changed": "2026-03-14T08:49:59+00:00"
+    }
+  ]
+}

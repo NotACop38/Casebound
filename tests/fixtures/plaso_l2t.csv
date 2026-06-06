@@ -1,0 +1,6 @@
+date,time,timezone,MACB,source,sourcetype,type,user,host,short,desc,version,filename,inode,notes,format,extra
+03/14/2026,08:44:12,UTC,..B.,FILE,NTFS $MFT,Creation Time,-,WIN-ACCT-07,updater.exe created,Updater dropped to AppData Roaming,2,/Users/jdoe/AppData/Roaming/Microsoft/Windows/updater.exe,8042,,mft,sha256: 41686f19; size: 184320
+03/14/2026,08:44:30,UTC,M...,FILE,NTFS $MFT,Content Modification Time,-,WIN-ACCT-07,updater.exe modified,Updater payload written,2,/Users/jdoe/AppData/Roaming/Microsoft/Windows/updater.exe,8042,,mft,size: 184320
+03/14/2026,08:56:40,UTC,....,EVT,WinEVTX,Event Logged,-,WIN-FILE-02,Service installed,A service was installed in the system: WinHelpSvc,2,C:/Windows/System32/winevt/Logs/System.evtx,80492,,winevtx,event_identifier: 7045; record_number: 80492
+03/14/2026,09:02:50,UTC,..B.,FILE,NTFS $MFT,Creation Time,-,WIN-FILE-02,archive created,Collection archive created in Temp,2,/Windows/Temp/collected.7z,9210,,mft,size: 5242880
+99/99/9999,99:99:99,UTC,....,FILE,NTFS $MFT,Creation Time,-,WIN-FILE-02,broken row,Malformed date,2,/Windows/Temp/bad.bin,9999,,mft,

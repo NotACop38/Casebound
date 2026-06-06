@@ -9,9 +9,25 @@ register their mapper here as they land.
 from __future__ import annotations
 
 from casebound.normalize.mappers.base import Mapper, MappingError
+from casebound.normalize.mappers.chainsaw import ChainsawMapper
+from casebound.normalize.mappers.eztools import EZToolsMapper
+from casebound.normalize.mappers.generic_csv import GenericCsvMapper
 from casebound.normalize.mappers.hayabusa import HayabusaMapper
+from casebound.normalize.mappers.plaso import PlasoMapper
+from casebound.normalize.mappers.velociraptor import VelociraptorMapper
 
-__all__ = ["DEFAULT_MAPPERS", "HayabusaMapper", "Mapper", "MappingError", "default_mappers"]
+__all__ = [
+    "DEFAULT_MAPPERS",
+    "ChainsawMapper",
+    "EZToolsMapper",
+    "GenericCsvMapper",
+    "HayabusaMapper",
+    "Mapper",
+    "MappingError",
+    "PlasoMapper",
+    "VelociraptorMapper",
+    "default_mappers",
+]
 
 
 def default_mappers() -> dict[str, Mapper]:
@@ -20,7 +36,14 @@ def default_mappers() -> dict[str, Mapper]:
     A fresh dict per call so a caller can extend or swap entries without mutating
     shared state.
     """
-    return {HayabusaMapper.source_tool: HayabusaMapper()}
+    return {
+        HayabusaMapper.source_tool: HayabusaMapper(),
+        EZToolsMapper.source_tool: EZToolsMapper(),
+        GenericCsvMapper.source_tool: GenericCsvMapper(),
+        ChainsawMapper.source_tool: ChainsawMapper(),
+        VelociraptorMapper.source_tool: VelociraptorMapper(),
+        PlasoMapper.source_tool: PlasoMapper(),
+    }
 
 
 # A shared, ready-to-use registry for the common case.

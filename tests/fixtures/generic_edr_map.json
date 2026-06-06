@@ -1,0 +1,10 @@
+{
+  "timestamp": "EventTime",
+  "host_column": "Hostname",
+  "principal_column": "UserName",
+  "action_column": "Action",
+  "object_column": "Target",
+  "message_column": "Description",
+  "default_timestamp_desc": "logged",
+  "source_artifact": "edr_export.csv"
+}

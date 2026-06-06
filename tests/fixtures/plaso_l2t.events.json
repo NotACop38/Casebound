@@ -1,0 +1,140 @@
+{
+  "source_file": "plaso_l2t.csv",
+  "event_count": 4,
+  "events": [
+    {
+      "event_id": "647ca97c6266cc2173723699b399b4e50be010e446efd6eaf9e3db81c07207e6",
+      "datetime": "2026-03-14T08:44:12Z",
+      "timestamp_raw": "03/14/2026 08:44:12",
+      "source_timezone": "UTC",
+      "timestamp_desc": "created",
+      "message": "Updater dropped to AppData Roaming",
+      "host": "WIN-ACCT-07",
+      "principal": null,
+      "action": "file_create",
+      "object": "/Users/jdoe/AppData/Roaming/Microsoft/Windows/updater.exe",
+      "source_tool": "plaso",
+      "source_artifact": "NTFS $MFT",
+      "details": {
+        "MACB": "..B.",
+        "source": "FILE",
+        "sourcetype": "NTFS $MFT",
+        "type": "Creation Time",
+        "inode": "8042",
+        "format": "mft",
+        "extra": {
+          "sha256": "41686f19",
+          "size": "184320"
+        }
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "plaso_l2t.csv",
+        "record": "line:2"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "be436cf55c396b0ddc5bea2555d02a9d9fe2a4f5b3036bcc1fef44e317c8a450",
+      "datetime": "2026-03-14T08:44:30Z",
+      "timestamp_raw": "03/14/2026 08:44:30",
+      "source_timezone": "UTC",
+      "timestamp_desc": "modified",
+      "message": "Updater payload written",
+      "host": "WIN-ACCT-07",
+      "principal": null,
+      "action": "file_write",
+      "object": "/Users/jdoe/AppData/Roaming/Microsoft/Windows/updater.exe",
+      "source_tool": "plaso",
+      "source_artifact": "NTFS $MFT",
+      "details": {
+        "MACB": "M...",
+        "source": "FILE",
+        "sourcetype": "NTFS $MFT",
+        "type": "Content Modification Time",
+        "inode": "8042",
+        "format": "mft",
+        "extra": {
+          "size": "184320"
+        }
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "plaso_l2t.csv",
+        "record": "line:3"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "791bf313f9092825aef9b8361f3bd80f1a2b7348f1488918e3f4d86374f37b64",
+      "datetime": "2026-03-14T08:56:40Z",
+      "timestamp_raw": "03/14/2026 08:56:40",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "A service was installed in the system: WinHelpSvc",
+      "host": "WIN-FILE-02",
+      "principal": null,
+      "action": "logged",
+      "object": "C:/Windows/System32/winevt/Logs/System.evtx",
+      "source_tool": "plaso",
+      "source_artifact": "WinEVTX",
+      "details": {
+        "MACB": "....",
+        "source": "EVT",
+        "sourcetype": "WinEVTX",
+        "type": "Event Logged",
+        "inode": "80492",
+        "format": "winevtx",
+        "extra": {
+          "event_identifier": "7045",
+          "record_number": "80492"
+        }
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "plaso_l2t.csv",
+        "record": "line:4"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "d288563f7b7ff0cb47c82d7048e3f3d433d17e70de4495454e48b04364af3538",
+      "datetime": "2026-03-14T09:02:50Z",
+      "timestamp_raw": "03/14/2026 09:02:50",
+      "source_timezone": "UTC",
+      "timestamp_desc": "created",
+      "message": "Collection archive created in Temp",
+      "host": "WIN-FILE-02",
+      "principal": null,
+      "action": "file_create",
+      "object": "/Windows/Temp/collected.7z",
+      "source_tool": "plaso",
+      "source_artifact": "NTFS $MFT",
+      "details": {
+        "MACB": "..B.",
+        "source": "FILE",
+        "sourcetype": "NTFS $MFT",
+        "type": "Creation Time",
+        "inode": "9210",
+        "format": "mft",
+        "extra": {
+          "size": "5242880"
+        }
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "plaso_l2t.csv",
+        "record": "line:5"
+      },
+      "tags": []
+    }
+  ]
+}

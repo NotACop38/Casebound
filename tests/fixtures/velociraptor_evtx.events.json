@@ -1,0 +1,137 @@
+{
+  "source_file": "velociraptor_evtx.jsonl",
+  "event_count": 4,
+  "events": [
+    {
+      "event_id": "e9fe1987399d9b3cdc2fcd28fbdcf55036a585db01e44ae2a58d576ed4b86032",
+      "datetime": "2026-03-14T08:42:17.123456Z",
+      "timestamp_raw": "2026-03-14T08:42:17.123456Z",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "A new process has been created",
+      "host": "WIN-ACCT-07",
+      "principal": "CORP\\jdoe",
+      "action": "process_create",
+      "object": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "source_tool": "velociraptor",
+      "source_artifact": "Security.evtx",
+      "details": {
+        "win_event_id": 4688,
+        "channel": "Security",
+        "fields": {
+          "NewProcessName": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+          "ParentProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+          "SubjectUserName": "jdoe",
+          "SubjectDomainName": "CORP",
+          "CommandLine": "powershell.exe -nop -w hidden -enc SQBFAFgA"
+        },
+        "vql_artifact": "Windows.EventLogs.Evtx"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "velociraptor_evtx.jsonl",
+        "record": "80038"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "d23755ae9d34edca6dfea3d885a29acdf7e4387e2af6c2e1b8da133f5fe8bce1",
+      "datetime": "2026-03-14T08:43:05Z",
+      "timestamp_raw": "2026-03-14T08:43:05Z",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "Network connection detected",
+      "host": "WIN-ACCT-07",
+      "principal": "CORP\\jdoe",
+      "action": "network_connect",
+      "object": "203.0.113.77:443",
+      "source_tool": "velociraptor",
+      "source_artifact": "Microsoft-Windows-Sysmon%4Operational.evtx",
+      "details": {
+        "win_event_id": 3,
+        "channel": "Microsoft-Windows-Sysmon/Operational",
+        "fields": {
+          "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+          "DestinationHostname": "sync-update.example",
+          "DestinationIp": "203.0.113.77",
+          "DestinationPort": "443",
+          "User": "CORP\\jdoe"
+        },
+        "vql_artifact": "Windows.EventLogs.Evtx"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "velociraptor_evtx.jsonl",
+        "record": "80114"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "9312f509111859d6a18939579c78dff8cdec64cba9dc94df8f6a0fe502fb9080",
+      "datetime": "2026-03-14T08:55:03Z",
+      "timestamp_raw": "2026-03-14T08:55:03Z",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "An account was successfully logged on",
+      "host": "WIN-FILE-02",
+      "principal": "CORP\\svc-backup",
+      "action": "logon",
+      "object": "10.4.12.66",
+      "source_tool": "velociraptor",
+      "source_artifact": "Security.evtx",
+      "details": {
+        "win_event_id": 4624,
+        "channel": "Security",
+        "fields": {
+          "TargetUserName": "svc-backup",
+          "TargetDomainName": "CORP",
+          "IpAddress": "10.4.12.66",
+          "LogonType": "3"
+        },
+        "vql_artifact": "Windows.EventLogs.Evtx"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "velociraptor_evtx.jsonl",
+        "record": "80356"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "2bb693e9f586ad64c9bf57f2b6b99f75846744b371a10862ecbaca06e901bed9",
+      "datetime": "2026-03-14T09:11:00Z",
+      "timestamp_raw": "2026-03-14T09:11:00Z",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "Uncovered application event",
+      "host": "WIN-FILE-02",
+      "principal": null,
+      "action": "other",
+      "object": null,
+      "source_tool": "velociraptor",
+      "source_artifact": "Application.evtx",
+      "details": {
+        "win_event_id": 9999,
+        "channel": "Application",
+        "fields": {
+          "Foo": "bar"
+        },
+        "vql_artifact": "Windows.EventLogs.Evtx"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 0.5,
+      "raw_ref": {
+        "source_file": "velociraptor_evtx.jsonl",
+        "record": "80701"
+      },
+      "tags": []
+    }
+  ]
+}

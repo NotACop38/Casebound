@@ -1,0 +1,107 @@
+{
+  "source_file": "generic_edr_slice.csv",
+  "config_file": "generic_edr_map.json",
+  "event_count": 4,
+  "events": [
+    {
+      "event_id": "80cbd85223d4fd8a9bd707c0b454956a64b167e771749e148998a88170a52cb7",
+      "datetime": "2026-03-14T08:42:17Z",
+      "timestamp_raw": "2026-03-14T08:42:17Z",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "Office application spawned PowerShell",
+      "host": "WIN-ACCT-07",
+      "principal": "CORP\\jdoe",
+      "action": "process_create",
+      "object": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "source_tool": "generic_csv",
+      "source_artifact": "edr_export.csv",
+      "details": {
+        "Severity": "high"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "generic_edr_slice.csv",
+        "record": "line:2"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "880ff3acc40ab0be6538e6550b9dc3976939a63a3b4a39180999975e45237d28",
+      "datetime": "2026-03-14T08:43:05Z",
+      "timestamp_raw": "2026-03-14T08:43:05Z",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "PowerShell connected to a rare external host",
+      "host": "WIN-ACCT-07",
+      "principal": "CORP\\jdoe",
+      "action": "network_connect",
+      "object": "203.0.113.77:443",
+      "source_tool": "generic_csv",
+      "source_artifact": "edr_export.csv",
+      "details": {
+        "Severity": "high"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "generic_edr_slice.csv",
+        "record": "line:3"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "9e898802130a4a3fb0cfb053d84f8c42ca7f908ce6f41cd032e9acecd9cc1098",
+      "datetime": "2026-03-14T08:44:30Z",
+      "timestamp_raw": "2026-03-14T08:44:30Z",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "Autorun Run key written to user AppData executable",
+      "host": "WIN-ACCT-07",
+      "principal": "CORP\\jdoe",
+      "action": "registry_set",
+      "object": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Updater",
+      "source_tool": "generic_csv",
+      "source_artifact": "edr_export.csv",
+      "details": {
+        "Severity": "medium"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "generic_edr_slice.csv",
+        "record": "line:4"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "2dea89844aa281aca6bfc4d2937f050abbe59c6be5d02d4ea2653f789cc6cf3c",
+      "datetime": "2026-03-14T08:55:03Z",
+      "timestamp_raw": "2026-03-14T08:55:03Z",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "Network logon with stolen service account credentials",
+      "host": "WIN-FILE-02",
+      "principal": "CORP\\svc-backup",
+      "action": "logon",
+      "object": "10.4.12.66",
+      "source_tool": "generic_csv",
+      "source_artifact": "edr_export.csv",
+      "details": {
+        "Severity": "high"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "generic_edr_slice.csv",
+        "record": "line:5"
+      },
+      "tags": []
+    }
+  ]
+}

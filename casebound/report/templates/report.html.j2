@@ -166,10 +166,10 @@ footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 14px;
       {% for ev in timeline %}
       <tr>
         <td class="when mono">{{ ev.datetime }}</td>
-        <td>{{ ev.host }}</td>
-        <td class="mono">{{ ev.principal }}</td>
+        <td>{{ ev.host or "" }}</td>
+        <td class="mono">{{ ev.principal or "" }}</td>
         <td class="mono">{{ ev.action }}</td>
-        <td class="mono">{{ ev.object }}</td>
+        <td class="mono">{{ ev.object or "" }}</td>
         <td>{% for tid in ev.techniques %}<span class="chip tech">{{ tid }}</span>{% endfor %}</td>
         <td><a href="#event-{{ ev.event_id }}" class="mono">{{ ev.short_id }}</a></td>
       </tr>
@@ -238,10 +238,10 @@ footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 14px;
       <dt>message</dt><dd>{{ ev.message }}</dd>
       <dt>datetime</dt><dd class="mono">{{ ev.datetime }}</dd>
       <dt>timestamp_desc</dt><dd>{{ ev.timestamp_desc }}</dd>
-      <dt>host</dt><dd>{{ ev.host }}</dd>
-      <dt>principal</dt><dd class="mono">{{ ev.principal }}</dd>
+      <dt>host</dt><dd>{{ ev.host or "" }}</dd>
+      <dt>principal</dt><dd class="mono">{{ ev.principal or "" }}</dd>
       <dt>action</dt><dd class="mono">{{ ev.action }}</dd>
-      <dt>object</dt><dd class="mono">{{ ev.object }}</dd>
+      <dt>object</dt><dd class="mono">{{ ev.object or "" }}</dd>
       <dt>source</dt><dd>{{ ev.source_tool }} / {{ ev.source_artifact }}</dd>
       {% if ev.attack_techniques %}
       <dt>attack_techniques</dt><dd>{% for t in ev.attack_techniques %}<span class="chip tech">{{ t.technique_id }}</span> <span style="color:var(--muted);font-size:11.5px;">({{ t.mapping_source }})</span>{% if not loop.last %} {% endif %}{% endfor %}</dd>

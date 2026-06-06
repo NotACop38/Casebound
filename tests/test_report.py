@@ -224,6 +224,16 @@ def test_report_episode_and_ioc_links_resolve_to_appendix_events(tmp_path: Path)
             assert f'id="event-{event.event_id}"' in html
 
 
+def test_report_supports_dark_mode_and_stays_self_contained(tmp_path: Path) -> None:
+    # The report adapts to the reader's OS dark-mode preference, and it does so
+    # without fetching anything: the dark palette is an inline token override, so
+    # the self-contained guarantee (FR28) still holds.
+    events = _events(tmp_path)
+    html = render_report(events, None, scenario="office_intrusion")
+    assert "@media (prefers-color-scheme: dark)" in html
+    _assert_self_contained(html)
+
+
 def test_null_fields_render_blank_not_the_literal_none() -> None:
     # The canonical schema allows a null host, principal, or object. The HTML report
     # must blank those cells, exactly as the Markdown and JSON renderers do, and must

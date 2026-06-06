@@ -139,3 +139,10 @@ addopts = "-ra -q"
 markers = [
     "invariant: defensive-scope invariant tests (PRD Section 6, Hard rule 1); run as a named step by 'make security'.",
 ]
+# Silence one known upstream deprecation: Starlette's TestClient warns that it uses
+# httpx rather than httpx2 (pinned starlette 1.2.1 plus httpx 0.28.1). It is internal
+# to the test client and nothing we control, so the message is ignored narrowly,
+# scoped to that exact text so a real deprecation in our own code is never hidden.
+filterwarnings = [
+    "ignore:Using .httpx. with .starlette.testclient. is deprecated",
+]

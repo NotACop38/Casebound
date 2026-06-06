@@ -140,6 +140,7 @@ A single Python package with firm module boundaries, each independently testable
 |`report`   |HTML, JSON, and Markdown renderers; ATT&CK Navigator layer              |
 |`generate` |The synthetic evidence generator and scenario definitions               |
 |`cli`      |The command surface (ingest, normalize, analyze, report, demo, generate)|
+|`web`      |Optional FastAPI viewer: browse the timeline and report (reuses `report`)|
 
 See <docs/PRD.md> for the full design and <docs/verification.md> for the claim and citation contract.
 
@@ -198,6 +199,17 @@ The build runs vertical-slice-first. See <docs/ENGINEERING_CHECKLIST.md> for the
 1. Raw-artifact mode via Dissect (optional, license-gated).
 1. Optional web UI.
 1. Community readiness and the v0.1.0 release.
+
+## Optional web UI
+
+A minimal, opt-in viewer to browse the timeline and read the report in a browser. It reuses the report layer unchanged, so the page it serves is identical to the report the CLI writes. It is offline and loopback-only: it fetches nothing at view time, makes no outbound connection, and never opens or executes an upload. The server dependencies live in the opt-in `web` extra, off the default import graph.
+
+```bash
+pip install -e ".[web]"   # FastAPI plus uvicorn, none of it in the core install
+make web                  # serve on http://127.0.0.1:8000 (or: python -m web)
+```
+
+Open `/` for the loaded cases, `/cases/demo/timeline` to browse, and `/cases/demo/report` for the full report. Upload a Hayabusa CSV to load your own timeline (size- and type-limited, parsed read-only). See `web/README.md`.
 
 ## Contributing
 

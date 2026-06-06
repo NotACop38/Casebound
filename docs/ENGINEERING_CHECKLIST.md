@@ -106,8 +106,8 @@ Exit criteria: at least EVTX and one more artifact parse directly into the schem
 Goal: a browsable timeline and report.
 Exit criteria: the UI reuses the report layer unchanged and preserves all offline and no-egress guarantees.
 
-- [ ] [D] Confirm D4.
-- [ ] [A] Minimal FastAPI app: load a case, browse the timeline, view the report, with size and type limits on any upload and no auto-fetch of anything.
+- [x] [D] Confirm D4. (Lean: include the minimal FastAPI viewer as the opt-in stretch, reusing the report layer unchanged. Its server deps are an opt-in `web` extra, off the default import graph; the core and CLI do not depend on it. See PRD Section 17 D4.)
+- [x] [A] Minimal FastAPI app: load a case, browse the timeline, view the report, with size and type limits on any upload and no auto-fetch of anything. (`web/app.py` plus `web/case.py` and autoescaped templates in `web/templates/`. The report route renders through the unchanged `casebound.report` layer, so the served demo report is byte for byte the report `casebound demo` writes, proven in `tests/test_web.py`. Uploads are bounded (a streamed byte cap, 413 past it) and typed (a `.csv` name plus a text or CSV content type and UTF-8 decode, 415 otherwise), parsed read-only as Hayabusa CSV; nothing is opened, executed, or fetched, and an upload yielding no events is rejected. Offline and loopback-only, no outbound socket, asserted by the no-egress test. See `web/README.md`.)
 
 ## Phase 10 - Community readiness and release
 

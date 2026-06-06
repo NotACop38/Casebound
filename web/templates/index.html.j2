@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Casebound</title>
+<style>
+:root { --ink: #1b1f24; --muted: #5b6470; --line: #d8dee6; --panel: #f6f8fa; --link: #0a4fa0; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--ink); background: #ffffff; }
+.wrap { max-width: 980px; margin: 0 auto; padding: 32px 24px 64px; }
+header.masthead { border-bottom: 2px solid var(--ink); padding-bottom: 16px; margin-bottom: 8px; }
+header.masthead h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: -0.01em; }
+header.masthead .tagline { color: var(--muted); margin: 0; }
+section { margin: 32px 0; }
+section > h2 { font-size: 20px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+a { color: var(--link); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; }
+.panel p { margin: 0 0 12px; }
+form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+button { font: inherit; padding: 7px 14px; border: 1px solid var(--link); background: var(--link); color: #fff; border-radius: 6px; cursor: pointer; }
+.empty { color: var(--muted); font-style: italic; }
+footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 14px; color: var(--muted); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <h1>Casebound</h1>
+  <p class="tagline">Local-first DFIR investigation copilot. Browse the timeline and the
+  verification-fenced report. Runs fully offline; no evidence leaves this host.</p>
+</header>
+
+<section>
+  <h2>Loaded cases</h2>
+  {% if cases %}
+  <table>
+    <thead>
+      <tr><th>Case</th><th>Source</th><th>Events</th><th>Narrative</th><th>Open</th></tr>
+    </thead>
+    <tbody>
+      {% for c in cases %}
+      <tr>
+        <td>{{ c.title }}</td>
+        <td class="mono">{{ c.source_label }}</td>
+        <td>{{ c.event_count }}</td>
+        <td>{{ "verified narrative" if c.has_narrative else "deterministic (no model)" }}</td>
+        <td>
+          <a href="/cases/{{ c.case_id }}/timeline">timeline</a> /
+          <a href="/cases/{{ c.case_id }}/report">report</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No cases loaded.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Load a timeline</h2>
+  <div class="panel">
+    <p>Upload a Hayabusa CSV timeline. It is parsed read-only into the canonical schema and
+    rendered as a deterministic report. The file is never opened as a program, executed, or
+    fetched from anywhere: it is only read as CSV text. Only a <span class="mono">.csv</span>
+    is accepted, up to {{ max_upload_kib }} KiB.</p>
+    <form action="/upload" method="post" enctype="multipart/form-data">
+      <input type="file" name="file" accept=".csv,text/csv" required>
+      <button type="submit">Upload and analyze</button>
+    </form>
+  </div>
+</section>
+
+<footer>
+  Casebound runs offline. The deterministic core needs no model and no network; any narrative
+  defaults to a local model so evidence stays on the host. This viewer fetches nothing at view
+  time and makes no outbound connection.
+</footer>
+
+</div>
+</body>
+</html>

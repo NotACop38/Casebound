@@ -14,10 +14,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 
 from casebound.verify.engine import NarrativeModel
+
+if TYPE_CHECKING:
+    from casebound.metrics import Metrics
 
 app = typer.Typer(
     name="casebound",
@@ -26,9 +30,15 @@ app = typer.Typer(
     add_completion=False,
 )
 
-# The default output file the demo writes (the hero deliverable). README and
-# Makefile reference this path.
+# The default output files the demo writes. The HTML report is the hero
+# deliverable; the JSON and Markdown carry the same content (FR29, FR30), the
+# Navigator layer holds the observed techniques (FR31), and metrics.json persists
+# the headline numbers (PRD Section 12). README and Makefile reference these paths.
 DEMO_REPORT_NAME = "report.html"
+DEMO_JSON_NAME = "report.json"
+DEMO_MARKDOWN_NAME = "report.md"
+DEMO_LAYER_NAME = "attack_navigator_layer.json"
+DEMO_METRICS_NAME = "metrics.json"
 
 
 @app.callback()
@@ -77,12 +87,19 @@ def generate(
 class DemoResult:
     """The outcome of one demo run, for the CLI summary and the tests.
 
-    ``report_path`` is the self-contained HTML written. The counts summarize the
-    deterministic pipeline and the verifier. ``no_model`` is True when the
-    deterministic no-model path was taken (no narrative produced, FR26).
+    ``report_path`` is the self-contained HTML written; ``json_path``,
+    ``markdown_path``, ``layer_path``, and ``metrics_path`` are the sibling outputs
+    (the JSON and Markdown reports, the ATT&CK Navigator layer, and the persisted
+    metrics). The counts summarize the deterministic pipeline and the verifier.
+    ``metrics`` carries the headline numbers (PRD Section 12). ``no_model`` is True
+    when the deterministic no-model path was taken (no narrative produced, FR26).
     """
 
     report_path: Path
+    json_path: Path
+    markdown_path: Path
+    layer_path: Path
+    metrics_path: Path
     event_count: int
     problem_count: int
     technique_count: int
@@ -90,6 +107,7 @@ class DemoResult:
     ioc_count: int
     accepted_count: int
     rejected_count: int
+    metrics: Metrics
     no_model: bool
 
 
@@ -128,14 +146,22 @@ def run_demo(
     included. ``model_label`` names the narrative source in the report;
     ``max_rounds`` overrides the verifier's revision-round budget.
     """
+    import json
+
     from casebound.enrich.attack import tag_events
     from casebound.enrich.cluster import cluster_events
     from casebound.enrich.ioc import extract_iocs
     from casebound.generate import DEFAULT_SEED, generate
     from casebound.generate.synth import CSV_FILENAME
     from casebound.ingest import HayabusaAdapter
+    from casebound.metrics import compute_metrics
     from casebound.normalize import normalize_records
-    from casebound.report import write_report
+    from casebound.report import (
+        write_json_report,
+        write_markdown_report,
+        write_navigator_layer,
+        write_report,
+    )
     from casebound.verify import DEFAULT_MAX_ROUNDS, verify_narrative
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -165,16 +191,37 @@ def run_demo(
     if model is not None:
         resolved_label = model_label if model_label is not None else "local model (offline)"
 
+    scenario_name = scenario.ground_truth["scenario"]
+    report_args = {
+        "scenario": scenario_name,
+        "source_tool": "hayabusa",
+        "model_label": resolved_label,
+        "provenance": normalized.provenance,
+        "episodes": clustered.episodes,
+        "iocs": extracted.iocs,
+    }
+
+    # The HTML report is the hero deliverable; the JSON and Markdown carry the same
+    # content (FR29, FR30), and the Navigator layer holds the observed techniques
+    # (FR31). All four regenerate offline from the same enriched events.
     report_path = write_report(
-        out_dir / DEMO_REPORT_NAME,
-        enriched_events,
-        verification,
-        scenario=scenario.ground_truth["scenario"],
-        source_tool="hayabusa",
-        model_label=resolved_label,
-        provenance=normalized.provenance,
-        episodes=clustered.episodes,
-        iocs=extracted.iocs,
+        out_dir / DEMO_REPORT_NAME, enriched_events, verification, **report_args
+    )
+    json_path = write_json_report(
+        out_dir / DEMO_JSON_NAME, enriched_events, verification, **report_args
+    )
+    markdown_path = write_markdown_report(
+        out_dir / DEMO_MARKDOWN_NAME, enriched_events, verification, **report_args
+    )
+    layer_path = write_navigator_layer(
+        out_dir / DEMO_LAYER_NAME, enriched_events, scenario=scenario_name
+    )
+
+    # Compute and persist the headline metrics (PRD Section 12, FR35).
+    metrics = compute_metrics(enriched_events, verification, scenario.ground_truth)
+    metrics_path = out_dir / DEMO_METRICS_NAME
+    metrics_path.write_text(
+        json.dumps(metrics.to_dict(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
 
     technique_count = len(
@@ -182,6 +229,10 @@ def run_demo(
     )
     return DemoResult(
         report_path=report_path,
+        json_path=json_path,
+        markdown_path=markdown_path,
+        layer_path=layer_path,
+        metrics_path=metrics_path,
         event_count=len(enriched_events),
         problem_count=normalized.problem_count,
         technique_count=technique_count,
@@ -189,6 +240,7 @@ def run_demo(
         ioc_count=len(extracted.iocs),
         accepted_count=len(verification.accepted) if verification else 0,
         rejected_count=len(verification.audit) if verification else 0,
+        metrics=metrics,
         no_model=model is None,
     )
 
@@ -258,7 +310,38 @@ def demo(
             f"verified narrative: {result.accepted_count} claim(s) accepted, "
             f"{result.rejected_count} rejected and logged"
         )
+
+    metrics = result.metrics
+    attack = metrics.attack
+    typer.echo("metrics (PRD Section 12):")
+    typer.echo(
+        f"  hallucination-rejection rate: {metrics.hallucination_rejection_rate:.2f} "
+        f"({metrics.rejected_fabrications}/{metrics.seeded_fabrications} seeded fabrications "
+        "rejected, target 1.00)"
+    )
+    typer.echo(
+        f"  citation accuracy: {metrics.citation_accuracy:.2f} "
+        f"({metrics.accurate_claims}/{metrics.emitted_claims} emitted claims, target 1.00)"
+    )
+    typer.echo(
+        f"  ATT&CK precision: {attack.precision:.2f} (target 0.90), "
+        f"recall: {attack.recall:.2f} (target 0.70)"
+    )
+    typer.echo(f"  technique coverage: {metrics.coverage} distinct technique(s)")
+    typer.echo(f"  targets met: {'yes' if metrics.meets_targets() else 'no'}")
+
     typer.echo(f"wrote {result.report_path}")
+    typer.echo(f"wrote {result.json_path}")
+    typer.echo(f"wrote {result.markdown_path}")
+    typer.echo(f"wrote {result.layer_path}")
+    typer.echo(f"wrote {result.metrics_path}")
+
+    # The demo is a reproducibility check: if any headline metric falls below its
+    # PRD Section 12 target, fail loudly rather than writing the outputs and exiting
+    # 0, so a regressed verifier or tagger cannot be reproduced as a green run.
+    if not metrics.meets_targets():
+        typer.echo("error: one or more metrics fell below target (see above)", err=True)
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

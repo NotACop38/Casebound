@@ -1,0 +1,6 @@
+EventTime,Hostname,UserName,Action,Target,Severity,Description
+2026-03-14T08:42:17Z,WIN-ACCT-07,CORP\jdoe,Process Create,C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe,high,Office application spawned PowerShell
+2026-03-14T08:43:05Z,WIN-ACCT-07,CORP\jdoe,Network Connect,203.0.113.77:443,high,PowerShell connected to a rare external host
+2026-03-14T08:44:30Z,WIN-ACCT-07,CORP\jdoe,Registry Set,HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Updater,medium,Autorun Run key written to user AppData executable
+2026-03-14T08:55:03Z,WIN-FILE-02,CORP\svc-backup,Logon,10.4.12.66,high,Network logon with stolen service account credentials
+not-a-timestamp,WIN-FILE-02,CORP\svc-backup,Logon,10.4.12.66,high,Malformed timestamp row

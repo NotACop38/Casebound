@@ -47,7 +47,7 @@ Goal: cover the sources responders actually run.
 Exit criteria: each new adapter ships with a fixture and a normalization golden test; malformed rows are reported without aborting (FR7).
 
 - [x] [A] Eric Zimmerman or Timeline Explorer style CSV adapter from KAPE output (FR3), with fixtures and golden tests.
-- [ ] [A] Generic CSV adapter with a documented column-mapping config (FR4).
+- [x] [A] Generic CSV adapter with a documented column-mapping config (FR4).
 - [ ] [A] Chainsaw adapter (FR5).
 - [ ] [A] Velociraptor and Plaso timeline adapters (FR6).
 - [ ] [A] De-duplication across sources with provenance retained (FR12).

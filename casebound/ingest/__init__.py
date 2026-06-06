@@ -19,10 +19,13 @@ from __future__ import annotations
 
 from casebound.ingest.base import IngestAdapter, RawRecord
 from casebound.ingest.eztools import EZToolsAdapter
+from casebound.ingest.generic_csv import ColumnMap, GenericCsvAdapter
 from casebound.ingest.hayabusa import HayabusaAdapter, channel_to_artifact
 
 __all__ = [
+    "ColumnMap",
     "EZToolsAdapter",
+    "GenericCsvAdapter",
     "HayabusaAdapter",
     "IngestAdapter",
     "RawRecord",

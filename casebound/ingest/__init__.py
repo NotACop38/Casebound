@@ -22,6 +22,8 @@ from casebound.ingest.chainsaw import ChainsawAdapter
 from casebound.ingest.eztools import EZToolsAdapter
 from casebound.ingest.generic_csv import ColumnMap, GenericCsvAdapter
 from casebound.ingest.hayabusa import HayabusaAdapter, channel_to_artifact
+from casebound.ingest.plaso import PlasoAdapter
+from casebound.ingest.velociraptor import VelociraptorAdapter
 
 __all__ = [
     "ChainsawAdapter",
@@ -30,6 +32,8 @@ __all__ = [
     "GenericCsvAdapter",
     "HayabusaAdapter",
     "IngestAdapter",
+    "PlasoAdapter",
     "RawRecord",
+    "VelociraptorAdapter",
     "channel_to_artifact",
 ]

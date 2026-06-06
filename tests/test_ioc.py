@@ -68,9 +68,12 @@ def test_defang_brackets_domain_dots() -> None:
     assert "." not in defang("a.b.c.example", IOC_TYPE_DOMAIN).replace("[.]", "")
 
 
-def test_defang_rewrites_http_scheme() -> None:
+def test_defang_rewrites_only_an_actual_scheme_prefix() -> None:
     assert defang("http://evil.example", IOC_TYPE_DOMAIN) == "hxxp://evil[.]example"
-    assert defang("HTTPS://Evil.Example", IOC_TYPE_DOMAIN) == "hxxpS://Evil[.]Example"
+    assert defang("HTTPS://Evil.Example", IOC_TYPE_DOMAIN) == "hxxps://Evil[.]Example"
+    # A bare domain label that merely contains the letters http is not corrupted.
+    assert defang("httpbin.org", IOC_TYPE_DOMAIN) == "httpbin[.]org"
+    assert defang("my-http-c2.example", IOC_TYPE_DOMAIN) == "my-http-c2[.]example"
 
 
 def test_defang_leaves_hashes_and_paths_unchanged() -> None:
@@ -109,6 +112,20 @@ def test_a_command_line_yields_its_embedded_path_not_the_exe_name() -> None:
     found = _candidates_from_value("7z.exe a -p REDACTED C:\\Windows\\Temp\\backup.7z")
     assert (IOC_TYPE_PATH, "C:\\Windows\\Temp\\backup.7z") in found
     assert all(kind != IOC_TYPE_DOMAIN for kind, _ in found)
+
+
+def test_command_line_starting_with_a_path_still_yields_its_other_iocs() -> None:
+    # A command line whose first token is a full path must not be swallowed whole:
+    # the leading path and the embedded domain are both recovered.
+    found = _candidates_from_value("C:\\Windows\\System32\\curl.exe https://sync-update.example")
+    assert (IOC_TYPE_PATH, "C:\\Windows\\System32\\curl.exe") in found
+    assert (IOC_TYPE_DOMAIN, "sync-update.example") in found
+
+
+def test_two_paths_in_one_value_are_both_extracted() -> None:
+    found = _candidates_from_value("C:\\a\\one.exe C:\\b\\two.txt")
+    paths = {value for kind, value in found if kind == IOC_TYPE_PATH}
+    assert paths == {"C:\\a\\one.exe", "C:\\b\\two.txt"}
 
 
 def test_ip_in_a_host_port_object_is_extracted() -> None:

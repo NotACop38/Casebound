@@ -208,14 +208,17 @@ class IocExtraction:
 def defang(value: str, ioc_type: str) -> str:
     """Return the defanged rendering of an indicator.
 
-    For an IP or a domain, every dot is bracketed and any ``http`` scheme is
-    rewritten to ``hxxp``, so the value cannot be clicked or resolved by accident.
-    A hash or a path carries no network-actionable content, so it is returned
-    unchanged.
+    For an IP or a domain, every dot is bracketed so the value cannot be resolved
+    by accident, and an actual ``http://`` or ``https://`` scheme prefix is
+    rewritten to ``hxxp(s)://``. The scheme rewrite is anchored to a real prefix so
+    a domain label that merely contains the letters http (for example
+    ``httpbin.org``) is not corrupted. A hash or a path carries no
+    network-actionable content, so it is returned unchanged.
     """
     if ioc_type not in (IOC_TYPE_IP, IOC_TYPE_DOMAIN):
         return value
-    rendered = re.sub(r"(?i)http", "hxxp", value)
+    rendered = re.sub(r"(?i)^https://", "hxxps://", value)
+    rendered = re.sub(r"(?i)^http://", "hxxp://", rendered)
     return rendered.replace(".", "[.]")
 
 
@@ -237,9 +240,21 @@ def _normalize_value(ioc_type: str, value: str) -> str:
     return value
 
 
+# A value that is one whole path: a drive-letter or UNC prefix followed only by
+# path-shaped characters to the end of the string. Spaces are allowed (so
+# ``C:\\Program Files\\...`` stays intact), but a colon, a forward slash, a plus, or
+# the other characters below are not, so a value that merely starts with a path (a
+# command line ``C:\\...\\curl.exe https://host`` or ``C:\\a.exe C:\\b.txt``, or a
+# call trace ``C:\\...\\ntdll.dll+9d2e4``) does not match and falls through to the
+# embedded scan, which extracts the leading path plus the URL, IP, or second path
+# as separate indicators.
+_WHOLE_PATH_BODY = "[^:/+,;¦'\"<>|?\n\r\t]*"
+_WHOLE_PATH_RE = re.compile(r"^(?:[A-Za-z]:\\|\\\\)" + _WHOLE_PATH_BODY + r"$")
+
+
 def _is_whole_path(value: str) -> bool:
-    """True when the entire value is a drive-letter or UNC path."""
-    return bool(re.match(r"^[A-Za-z]:\\", value)) or value.startswith("\\\\")
+    """True when the entire value is a single drive-letter or UNC path."""
+    return bool(_WHOLE_PATH_RE.match(value))
 
 
 def _blank_spans(

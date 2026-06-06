@@ -17,16 +17,18 @@ The grouping rule, stated precisely so it is auditable:
      a long quiet gap is a new one.
 
   3. Principal proximity: a new episode also starts on a principal handoff, that
-     is when the previous and current events are both attributed (neither
-     principal is null) and they name different accounts. Accounts are compared on
-     the bare account name (the segment after any ``DOMAIN\\`` prefix, case
-     insensitively), so the same actor spelled ``CORP\\jdoe`` on one record and
-     ``jdoe`` on another is treated as one actor, not a handoff. An unattributed
-     event (a null principal, common on a raw telemetry record) never forces a
-     split: it joins the surrounding run rather than fragmenting a coherent burst
-     of one actor's activity. The effect is that an episode carries at most one
-     distinct account, while a different actor on the same host opens a new episode
-     even with no time gap.
+     is when an attributed event names a different account than the run's current
+     actor. The current actor is the most recent named (non-null) account in the
+     run, not just the immediately previous event, so an unattributed event between
+     two different actors does not bridge them into one episode. Accounts are
+     compared on the bare account name (the segment after any ``DOMAIN\\`` prefix,
+     case insensitively), so the same actor spelled ``CORP\\jdoe`` on one record
+     and ``jdoe`` on another is treated as one actor, not a handoff. An
+     unattributed event (a null principal, common on a raw telemetry record) never
+     forces a split on its own: it joins the surrounding run rather than
+     fragmenting a coherent burst of one actor's activity. The effect is that an
+     episode carries at most one distinct account, while a different actor on the
+     same host opens a new episode even with no time gap.
 
 The episode id is a stable content hash of the sorted member event ids, so the
 same membership always yields the same id and the id is an unforgeable handle to
@@ -64,8 +66,8 @@ __all__ = [
 ]
 
 # How long a quiet gap, in seconds, ends one episode and starts the next within a
-# single (host, principal) stream. Ten minutes groups a dense burst of related
-# activity while keeping a later, separate burst its own episode (FR15).
+# single host's stream. Ten minutes groups a dense burst of related activity while
+# keeping a later, separate burst its own episode (FR15).
 DEFAULT_MAX_GAP_SECONDS = 600
 
 # The prefix used for the episode label written into an event's ``tags`` list, so
@@ -79,9 +81,8 @@ _EPISODE_ID_NAMESPACE = "casebound-episode-v0.1"
 # How many leading hex characters of the membership hash form the short id.
 _SHORT_ID_LEN = 12
 
-# The sentinel used to group events that share a missing host or principal. It is
-# never a real value, so an unattributed event groups only with other equally
-# unattributed events, never with a named actor.
+# The sentinel host key for events with a missing host. It is never a real host
+# name, so host-less events group only with each other, never with a named host.
 _UNATTRIBUTED = "\x00"
 
 
@@ -186,10 +187,17 @@ def _episode_principal(events: list[Event]) -> str | None:
 
 
 def _split_into_episodes(events: list[Event], max_gap_seconds: int) -> list[Episode]:
-    """Split one host's stream, already time-sorted, into episodes (time, principal)."""
+    """Split one host's stream, already time-sorted, into episodes (time, principal).
+
+    A new episode begins on a time gap beyond ``max_gap_seconds`` (time proximity)
+    or on a principal handoff: an attributed event whose account differs from the
+    run's current actor, the most recent named account in the run. A null principal
+    never opens an episode on its own and never changes the run's current actor.
+    """
     episodes: list[Episode] = []
     run: list[Event] = []
-    previous: Event | None = None
+    previous_time: datetime | None = None
+    run_account: str | None = None  # most recent named account in the current run
 
     def flush() -> None:
         if not run:
@@ -207,30 +215,24 @@ def _split_into_episodes(events: list[Event], max_gap_seconds: int) -> list[Epis
         )
 
     for event in events:
-        if previous is not None and _starts_new_episode(previous, event, max_gap_seconds):
+        moment = _parse_utc(event.datetime)
+        account = _account(event.principal) if event.principal is not None else None
+
+        gapped = (
+            previous_time is not None and (moment - previous_time).total_seconds() > max_gap_seconds
+        )
+        handoff = account is not None and run_account is not None and account != run_account
+        if gapped or handoff:
             flush()
             run = []
+            run_account = None
+
         run.append(event)
-        previous = event
+        previous_time = moment
+        if account is not None:
+            run_account = account
     flush()
     return episodes
-
-
-def _starts_new_episode(previous: Event, current: Event, max_gap_seconds: int) -> bool:
-    """True when ``current`` opens a new episode after ``previous`` on the same host.
-
-    A new episode begins on a time gap beyond ``max_gap_seconds`` (time proximity)
-    or on a principal handoff between two attributed events (principal proximity).
-    A null principal on either side never forces a split.
-    """
-    gap = (_parse_utc(current.datetime) - _parse_utc(previous.datetime)).total_seconds()
-    if gap > max_gap_seconds:
-        return True
-    return (
-        previous.principal is not None
-        and current.principal is not None
-        and _account(previous.principal) != _account(current.principal)
-    )
 
 
 def cluster_events(

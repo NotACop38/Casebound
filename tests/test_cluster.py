@@ -108,6 +108,21 @@ def test_principal_handoff_splits_even_without_a_time_gap() -> None:
     assert result.episodes[1].principal == "CORP\\bob"
 
 
+def test_unattributed_event_does_not_bridge_two_different_actors() -> None:
+    # A null-principal event between two different attributed accounts must not
+    # merge them: the handoff is detected against the run's current actor, not just
+    # the immediately previous (null) event, so each actor gets its own episode.
+    a = _event(offset_seconds=0, principal="CORP\\alice")
+    middle = _event(offset_seconds=20, principal=None)
+    b = _event(offset_seconds=40, principal="CORP\\bob")
+    result = cluster_events([a, middle, b])
+    assert len(result.episodes) == 2
+    assert result.episodes[0].principal == "CORP\\alice"
+    assert result.episodes[0].event_count == 2  # alice plus the unattributed event
+    assert result.episodes[1].principal == "CORP\\bob"
+    assert result.episodes[1].event_count == 1
+
+
 def test_unattributed_event_does_not_fragment_a_run() -> None:
     # A null-principal event between two same-principal events joins the run rather
     # than splitting it: an episode carries one named principal across the gap.

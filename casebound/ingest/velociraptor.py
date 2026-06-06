@@ -12,7 +12,9 @@ Velociraptor names and lifts each ``EventData`` field under the reserved prefix 
 Velociraptor mapper reads, then attaches provenance. It does not interpret the row
 into the canonical schema; the Velociraptor mapper does that.
 
-Blank lines are skipped. The ``source_artifact`` is the event-log channel rendered
+Blank lines, and lines that are not a JSON object (including a truncated or
+otherwise unparseable line), are skipped, so one bad line never aborts an
+otherwise good export. The ``source_artifact`` is the event-log channel rendered
 as its EVTX file name when present, otherwise the VQL artifact name, so each record
 names the evidence it came from (FR11). The ``raw_ref.record`` is the
 ``EventRecordID`` when present and otherwise the 1-based source line number.
@@ -76,7 +78,14 @@ class VelociraptorAdapter(IngestAdapter):
                 stripped = line.strip()
                 if not stripped:
                     continue
-                row = json.loads(stripped)
+                try:
+                    row = json.loads(stripped)
+                except json.JSONDecodeError:
+                    # A line that is not valid JSON cannot become a record. Skip it
+                    # rather than aborting the whole export, the same as a line whose
+                    # JSON is not an object (below): one truncated line never sinks an
+                    # otherwise good run.
+                    continue
                 if isinstance(row, dict):
                     yield self._to_record(source, line_number, row)
 

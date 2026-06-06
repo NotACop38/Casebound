@@ -83,6 +83,35 @@ def test_blank_lines_skipped_and_bad_timestamp_reported() -> None:
     assert result.event_count == 4
 
 
+def test_malformed_json_line_is_skipped_not_fatal(tmp_path: Path) -> None:
+    # A single truncated or otherwise unparseable JSONL line must not abort the
+    # whole export: the surrounding valid records are still read (FR7).
+    good = {
+        "Timestamp": "2026-03-14T08:00:00Z",
+        "Computer": "H",
+        "Channel": "Security",
+        "EventID": 4688,
+        "Artifact": "Windows.EventLogs.Evtx",
+        "EventData": {"NewProcessName": "C:\\x.exe", "SubjectUserName": "u"},
+    }
+    path = tmp_path / "truncated.jsonl"
+    # A valid row, a truncated JSON line, a bare JSON array (not an object), then a
+    # second valid row that differs so it does not dedupe into the first.
+    path.write_text(
+        json.dumps(good)
+        + "\n"
+        + '{"Timestamp": "2026-03-14T08:01:00Z", "Compu\n'
+        + "[1, 2, 3]\n"
+        + json.dumps(dict(good, EventID=4624, EventData={"TargetUserName": "u"}))
+        + "\n",
+        encoding="utf-8",
+    )
+    result = _normalize(path)
+    # Both well-formed rows survive; the malformed and non-object lines are skipped.
+    assert result.event_count == 2
+    assert {e.action for e in result.events} == {"process_create", "logon"}
+
+
 # 4. De-duplication and the registry.
 
 

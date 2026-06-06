@@ -1,0 +1,273 @@
+{
+  "event_count": 9,
+  "events": [
+    {
+      "event_id": "8617e620f7103b91f98467fd1c0ee619832b90eef073b46f1ebf8bfa3aebc08f",
+      "datetime": "2026-03-14T08:44:12.123456Z",
+      "timestamp_raw": "2026-03-14T08:44:12.123456+00:00",
+      "source_timezone": "UTC",
+      "timestamp_desc": "created",
+      "message": "MFT standard information created timestamp for Users/jdoe/Downloads/invoice.exe",
+      "host": null,
+      "principal": null,
+      "action": "file_create",
+      "object": "Users/jdoe/Downloads/invoice.exe",
+      "source_tool": "dissect",
+      "source_artifact": "$MFT",
+      "details": {
+        "artifact": "$MFT",
+        "Segment": "8042",
+        "SequenceNumber": "3",
+        "FileName": "invoice.exe",
+        "IsDirectory": "false",
+        "FileSize": "54321"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "$MFT",
+        "record": "segment:8042 seq:3 created"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "929afe8ab1c47bbdb3e9625d73eca31357b185c1c59d133875be70d8e1bddc06",
+      "datetime": "2026-03-14T08:50:00Z",
+      "timestamp_raw": "2026-03-14T08:50:00+00:00",
+      "source_timezone": "UTC",
+      "timestamp_desc": "modified",
+      "message": "MFT standard information modified timestamp for Users/jdoe/Downloads/invoice.exe",
+      "host": null,
+      "principal": null,
+      "action": "file_write",
+      "object": "Users/jdoe/Downloads/invoice.exe",
+      "source_tool": "dissect",
+      "source_artifact": "$MFT",
+      "details": {
+        "artifact": "$MFT",
+        "Segment": "8042",
+        "SequenceNumber": "3",
+        "FileName": "invoice.exe",
+        "IsDirectory": "false",
+        "FileSize": "54321"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "$MFT",
+        "record": "segment:8042 seq:3 modified"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "de7f112079e64d77ae8881d04823ea1494333ff19d942a2bbdce811905461721",
+      "datetime": "2026-03-14T08:51:00Z",
+      "timestamp_raw": "2026-03-14T08:51:00+00:00",
+      "source_timezone": "UTC",
+      "timestamp_desc": "accessed",
+      "message": "MFT standard information accessed timestamp for Users/jdoe/Downloads/invoice.exe",
+      "host": null,
+      "principal": null,
+      "action": "file_read",
+      "object": "Users/jdoe/Downloads/invoice.exe",
+      "source_tool": "dissect",
+      "source_artifact": "$MFT",
+      "details": {
+        "artifact": "$MFT",
+        "Segment": "8042",
+        "SequenceNumber": "3",
+        "FileName": "invoice.exe",
+        "IsDirectory": "false",
+        "FileSize": "54321"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "$MFT",
+        "record": "segment:8042 seq:3 accessed"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "f3c788384b26e019a16a5a583788d0895749986ee53a51753bfe5534b278531a",
+      "datetime": "2026-03-14T08:50:01Z",
+      "timestamp_raw": "2026-03-14T08:50:01+00:00",
+      "source_timezone": "UTC",
+      "timestamp_desc": "other",
+      "message": "MFT standard information other timestamp for Users/jdoe/Downloads/invoice.exe",
+      "host": null,
+      "principal": null,
+      "action": "file_metadata_change",
+      "object": "Users/jdoe/Downloads/invoice.exe",
+      "source_tool": "dissect",
+      "source_artifact": "$MFT",
+      "details": {
+        "artifact": "$MFT",
+        "Segment": "8042",
+        "SequenceNumber": "3",
+        "FileName": "invoice.exe",
+        "IsDirectory": "false",
+        "FileSize": "54321"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "$MFT",
+        "record": "segment:8042 seq:3 other"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "3500220eb106918856a2f5bd88c7916223d3f8c0cb1cfd85bc98e6e577b8e64d",
+      "datetime": "2026-03-13T17:02:00Z",
+      "timestamp_raw": "2026-03-13T17:02:00+00:00",
+      "source_timezone": "UTC",
+      "timestamp_desc": "created",
+      "message": "MFT standard information created timestamp for Users/jdoe/Documents/report.docx",
+      "host": null,
+      "principal": null,
+      "action": "file_create",
+      "object": "Users/jdoe/Documents/report.docx",
+      "source_tool": "dissect",
+      "source_artifact": "$MFT",
+      "details": {
+        "artifact": "$MFT",
+        "Segment": "9001",
+        "SequenceNumber": "5",
+        "FileName": "report.docx",
+        "IsDirectory": "false",
+        "FileSize": "22222"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "$MFT",
+        "record": "segment:9001 seq:5 created"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "95eee06df17a61582a689561519e4dd6185f4fb4fdec074846ffb02e3b4afd65",
+      "datetime": "2026-03-14T08:30:00Z",
+      "timestamp_raw": "2026-03-14T08:30:00+00:00",
+      "source_timezone": "UTC",
+      "timestamp_desc": "modified",
+      "message": "MFT standard information modified timestamp for Users/jdoe/Documents/report.docx",
+      "host": null,
+      "principal": null,
+      "action": "file_write",
+      "object": "Users/jdoe/Documents/report.docx",
+      "source_tool": "dissect",
+      "source_artifact": "$MFT",
+      "details": {
+        "artifact": "$MFT",
+        "Segment": "9001",
+        "SequenceNumber": "5",
+        "FileName": "report.docx",
+        "IsDirectory": "false",
+        "FileSize": "22222"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "$MFT",
+        "record": "segment:9001 seq:5 modified"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "72ad4c6ecebe2420b6126410c8fb61dc0cc1061d7fe9577a43d76f90433ff69f",
+      "datetime": "2026-03-14T08:30:01Z",
+      "timestamp_raw": "2026-03-14T08:30:01+00:00",
+      "source_timezone": "UTC",
+      "timestamp_desc": "other",
+      "message": "MFT standard information other timestamp for Users/jdoe/Documents/report.docx",
+      "host": null,
+      "principal": null,
+      "action": "file_metadata_change",
+      "object": "Users/jdoe/Documents/report.docx",
+      "source_tool": "dissect",
+      "source_artifact": "$MFT",
+      "details": {
+        "artifact": "$MFT",
+        "Segment": "9001",
+        "SequenceNumber": "5",
+        "FileName": "report.docx",
+        "IsDirectory": "false",
+        "FileSize": "22222"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "$MFT",
+        "record": "segment:9001 seq:5 other"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "47c5c3172bdc781c072d85f187feaf36c0a20124130a7c9efff3e610de540b96",
+      "datetime": "2026-03-10T06:00:00Z",
+      "timestamp_raw": "2026-03-10T06:00:00+00:00",
+      "source_timezone": "UTC",
+      "timestamp_desc": "created",
+      "message": "MFT standard information created timestamp for Windows/Temp",
+      "host": null,
+      "principal": null,
+      "action": "file_create",
+      "object": "Windows/Temp",
+      "source_tool": "dissect",
+      "source_artifact": "$MFT",
+      "details": {
+        "artifact": "$MFT",
+        "Segment": "100",
+        "SequenceNumber": "1",
+        "FileName": "Temp",
+        "IsDirectory": "true"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "$MFT",
+        "record": "segment:100 seq:1 created"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "6b33b9b9942cb578eb5b30543cf78ce2f8bd659a62e00e09957935d67e4feada",
+      "datetime": "2026-03-14T08:49:59Z",
+      "timestamp_raw": "2026-03-14T08:49:59+00:00",
+      "source_timezone": "UTC",
+      "timestamp_desc": "other",
+      "message": "MFT standard information other timestamp for Windows/Temp",
+      "host": null,
+      "principal": null,
+      "action": "file_metadata_change",
+      "object": "Windows/Temp",
+      "source_tool": "dissect",
+      "source_artifact": "$MFT",
+      "details": {
+        "artifact": "$MFT",
+        "Segment": "100",
+        "SequenceNumber": "1",
+        "FileName": "Temp",
+        "IsDirectory": "true"
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "$MFT",
+        "record": "segment:100 seq:1 other"
+      },
+      "tags": []
+    }
+  ]
+}

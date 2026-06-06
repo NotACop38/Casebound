@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from casebound.normalize.mappers.base import Mapper, MappingError
 from casebound.normalize.mappers.chainsaw import ChainsawMapper
+from casebound.normalize.mappers.dissect import DissectMapper
 from casebound.normalize.mappers.eztools import EZToolsMapper
 from casebound.normalize.mappers.generic_csv import GenericCsvMapper
 from casebound.normalize.mappers.hayabusa import HayabusaMapper
@@ -19,6 +20,7 @@ from casebound.normalize.mappers.velociraptor import VelociraptorMapper
 __all__ = [
     "DEFAULT_MAPPERS",
     "ChainsawMapper",
+    "DissectMapper",
     "EZToolsMapper",
     "GenericCsvMapper",
     "HayabusaMapper",
@@ -43,6 +45,7 @@ def default_mappers() -> dict[str, Mapper]:
         ChainsawMapper.source_tool: ChainsawMapper(),
         VelociraptorMapper.source_tool: VelociraptorMapper(),
         PlasoMapper.source_tool: PlasoMapper(),
+        DissectMapper.source_tool: DissectMapper(),
     }
 
 

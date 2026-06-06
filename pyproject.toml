@@ -38,6 +38,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Optional raw-artifact mode (PRD Section 5, decision D2). Dissect is AGPL-3.0, so
+# it is deliberately NOT a core dependency: it is opt-in here and isolated to
+# casebound/ingest/raw so the core stays Apache-2.0 with no AGPL code on its import
+# path. Installing this extra (pip install "casebound[raw]") and using raw mode
+# brings AGPL-3.0 code into the assembled work, which is then subject to its terms.
+# The license boundary is enforced by tests/test_license_boundary.py.
+raw = [
+    "dissect.eventlog==3.11",
+    "dissect.ntfs==3.16",
+]
 # Pinned dev toolchain. Keep in lockstep with the CI gate (scripts/ci.py).
 dev = [
     "pytest==9.0.3",
@@ -96,6 +106,14 @@ warn_unused_ignores = true
 disallow_untyped_defs = true
 no_implicit_reexport = true
 files = ["casebound", "scripts", "tests"]
+
+[[tool.mypy.overrides]]
+# Dissect is an optional, AGPL-gated dependency (raw mode, decision D2). It is not
+# installed in the core CI environment and ships no type stubs we vendor, so its
+# absence must not fail the type gate. The raw adapters treat Dissect objects as
+# untyped at the boundary and distil them into typed dataclasses immediately.
+module = ["dissect.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "8.0"

@@ -166,9 +166,10 @@ A citation accuracy below 1.0 is a verifier bug, by design.
 |Generic CSV (column-mapped)      |tool output |MVP                 |
 |Chainsaw                         |tool output |implemented         |
 |Velociraptor, Plaso              |tool output |implemented         |
-|EVTX, MFT, registry (via Dissect)|raw artifact|later, license-gated|
+|EVTX, NTFS $MFT (via Dissect)    |raw artifact|optional, license-gated (`pip install "casebound[raw]"`)|
+|Registry and other artifacts     |raw artifact|planned             |
 
-Casebound normalizes and reasons; in the MVP it does not reinvent artifact parsing. It stands on the parsers responders already trust.
+Casebound normalizes and reasons; it does not reinvent artifact parsing. It stands on the parsers responders already trust. Raw mode (parsing EVTX and the NTFS `$MFT` directly with Dissect) is optional and isolated: Dissect is AGPL-3.0, so it is an opt-in extra kept off the core import path so the core stays Apache-2.0. See `docs/raw-mode.md`.
 
 ## Defensive scope and non-goals
 
@@ -204,7 +205,7 @@ Adding an ingestion source should take an afternoon: write an adapter, a fixture
 
 ## License
 
-Apache-2.0 for the core. Note: the optional raw-artifact mode depends on Dissect, which is AGPL-3.0, and is kept isolated so the core license stays permissive. See `docs/PRD.md` (decision D2) for the details.
+Apache-2.0 for the core. Note: the optional raw-artifact mode depends on Dissect, which is AGPL-3.0, and is kept isolated (an opt-in `raw` extra, confined to `casebound/ingest/raw`, off the core import path, enforced by a test) so the core license stays permissive. Installing the `raw` extra and using raw mode assembles a combined work subject to AGPL-3.0. See `docs/raw-mode.md` and `docs/PRD.md` (decision D2) for the details.
 
 <div align="center">
 

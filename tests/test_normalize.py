@@ -203,13 +203,16 @@ def test_uncovered_event_id_still_maps_to_a_generic_event() -> None:
 
 
 def test_unregistered_source_tool_is_reported() -> None:
+    # A record whose source_tool has no mapper in the supplied registry is reported,
+    # not fatal (FR7). Every default source tool now has a mapper, so this drives the
+    # pipeline's missing-mapper branch directly with a registry that omits the tool.
     record = RawRecord(
-        source_tool="dissect",  # a valid tool, but no mapper registered yet (Phase 8)
+        source_tool="dissect",
         source_artifact="Sysmon.evtx",
         raw_ref=RawRef(source_file="x.csv", record="1"),
         data={"Timestamp": "2026-03-14T08:30:05Z"},
     )
-    result = normalize_records([record])
+    result = normalize_records([record], mappers={})
     assert result.event_count == 0
     assert result.problem_count == 1
     assert "no mapper" in result.problems[0].reason

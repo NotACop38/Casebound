@@ -9,9 +9,17 @@ register their mapper here as they land.
 from __future__ import annotations
 
 from casebound.normalize.mappers.base import Mapper, MappingError
+from casebound.normalize.mappers.eztools import EZToolsMapper
 from casebound.normalize.mappers.hayabusa import HayabusaMapper
 
-__all__ = ["DEFAULT_MAPPERS", "HayabusaMapper", "Mapper", "MappingError", "default_mappers"]
+__all__ = [
+    "DEFAULT_MAPPERS",
+    "EZToolsMapper",
+    "HayabusaMapper",
+    "Mapper",
+    "MappingError",
+    "default_mappers",
+]
 
 
 def default_mappers() -> dict[str, Mapper]:
@@ -20,7 +28,10 @@ def default_mappers() -> dict[str, Mapper]:
     A fresh dict per call so a caller can extend or swap entries without mutating
     shared state.
     """
-    return {HayabusaMapper.source_tool: HayabusaMapper()}
+    return {
+        HayabusaMapper.source_tool: HayabusaMapper(),
+        EZToolsMapper.source_tool: EZToolsMapper(),
+    }
 
 
 # A shared, ready-to-use registry for the common case.

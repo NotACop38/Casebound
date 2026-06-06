@@ -1,0 +1,5 @@
+EntryNumber,SequenceNumber,InUse,ParentEntryNumber,ParentSequenceNumber,ParentPath,FileName,Extension,FileSize,IsDirectory,Created0x10,LastModified0x10,LastRecordChange0x10,LastAccess0x10
+8042,3,True,8030,2,.\Users\jdoe\AppData\Roaming\Microsoft\Windows,updater.exe,.exe,184320,False,2026-03-14 08:44:12.1234567,2026-03-14 08:44:12.1234567,2026-03-14 08:44:30.7654321,2026-03-14 08:44:12.1234567
+9117,5,True,9100,1,.\Windows\Temp,winhelpsvc.exe,.exe,221184,False,2026-03-14 08:56:31.0000000,2026-03-14 08:56:31.0000000,2026-03-14 08:56:40.5000000,2026-03-14 08:57:02.2500000
+9210,2,True,9100,1,.\Windows\Temp,collected.7z,.7z,5242880,False,2026-03-14 09:02:50.0000000,2026-03-14 09:03:11.0000000,2026-03-14 09:03:11.0000000,
+4501,1,True,4480,1,.\Users\jdoe\Documents,quarterly-report.docx,.docx,40960,False,,,,

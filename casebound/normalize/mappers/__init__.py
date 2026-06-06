@@ -9,12 +9,14 @@ register their mapper here as they land.
 from __future__ import annotations
 
 from casebound.normalize.mappers.base import Mapper, MappingError
+from casebound.normalize.mappers.chainsaw import ChainsawMapper
 from casebound.normalize.mappers.eztools import EZToolsMapper
 from casebound.normalize.mappers.generic_csv import GenericCsvMapper
 from casebound.normalize.mappers.hayabusa import HayabusaMapper
 
 __all__ = [
     "DEFAULT_MAPPERS",
+    "ChainsawMapper",
     "EZToolsMapper",
     "GenericCsvMapper",
     "HayabusaMapper",
@@ -34,6 +36,7 @@ def default_mappers() -> dict[str, Mapper]:
         HayabusaMapper.source_tool: HayabusaMapper(),
         EZToolsMapper.source_tool: EZToolsMapper(),
         GenericCsvMapper.source_tool: GenericCsvMapper(),
+        ChainsawMapper.source_tool: ChainsawMapper(),
     }
 
 

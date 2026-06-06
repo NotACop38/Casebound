@@ -1,0 +1,116 @@
+[
+  {
+    "group": "Sigma",
+    "kind": "individual",
+    "name": "Office Application Spawned PowerShell",
+    "level": "high",
+    "timestamp": "2026-03-14T08:42:17.123456Z",
+    "tags": ["attack.initial_access", "attack.t1566.001", "attack.execution", "attack.t1059.001"],
+    "document": {
+      "kind": "evtx",
+      "path": "C:\\evidence\\WIN-ACCT-07\\Security.evtx",
+      "data": {
+        "Event": {
+          "System": {
+            "Provider": "Microsoft-Windows-Security-Auditing",
+            "EventID": 4688,
+            "Channel": "Security",
+            "Computer": "WIN-ACCT-07",
+            "EventRecordID": 80038,
+            "TimeCreated": { "#attributes": { "SystemTime": "2026-03-14T08:42:17.123456Z" } }
+          },
+          "EventData": {
+            "NewProcessName": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "ParentProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+            "CommandLine": "powershell.exe -nop -w hidden -enc SQBFAFgA",
+            "SubjectUserName": "jdoe",
+            "SubjectDomainName": "CORP"
+          }
+        }
+      }
+    }
+  },
+  {
+    "group": "Sigma",
+    "kind": "individual",
+    "name": "PowerShell Network Connection to Rare External Host",
+    "level": "high",
+    "tags": ["attack.command_and_control", "attack.t1071.001"],
+    "document": {
+      "kind": "evtx",
+      "path": "C:\\evidence\\WIN-ACCT-07\\Microsoft-Windows-Sysmon%4Operational.evtx",
+      "data": {
+        "Event": {
+          "System": {
+            "Provider": "Microsoft-Windows-Sysmon",
+            "EventID": 3,
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "Computer": "WIN-ACCT-07",
+            "EventRecordID": 80114,
+            "TimeCreated": { "#attributes": { "SystemTime": "2026-03-14T08:43:05Z" } }
+          },
+          "EventData": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "DestinationHostname": "sync-update.example",
+            "DestinationIp": "203.0.113.77",
+            "DestinationPort": "443",
+            "User": "CORP\\jdoe"
+          }
+        }
+      }
+    }
+  },
+  {
+    "group": "Sigma",
+    "kind": "individual",
+    "name": "Service Installed from World-Writable Temp Path",
+    "level": "critical",
+    "timestamp": "2026-03-14T08:56:40Z",
+    "tags": ["attack.persistence", "attack.t1543.003"],
+    "document": {
+      "kind": "evtx",
+      "path": "C:\\evidence\\WIN-FILE-02\\System.evtx",
+      "data": {
+        "Event": {
+          "System": {
+            "Provider": "Service Control Manager",
+            "EventID": 7045,
+            "Channel": "System",
+            "Computer": "WIN-FILE-02",
+            "EventRecordID": 80492,
+            "TimeCreated": { "#attributes": { "SystemTime": "2026-03-14T08:56:40Z" } }
+          },
+          "EventData": {
+            "ServiceName": "WinHelpSvc",
+            "ImagePath": "C:\\Windows\\Temp\\winhelpsvc.exe",
+            "ServiceType": "user mode service",
+            "StartType": "auto start"
+          }
+        }
+      }
+    }
+  },
+  {
+    "group": "Chainsaw",
+    "kind": "individual",
+    "name": "Uncovered Event With No Mapping",
+    "level": "info",
+    "timestamp": "2026-03-14T09:10:00Z",
+    "tags": ["attack.discovery"],
+    "document": {
+      "kind": "evtx",
+      "path": "C:\\evidence\\WIN-FILE-02\\Application.evtx",
+      "data": {
+        "Event": {
+          "System": {
+            "EventID": 9999,
+            "Channel": "Application",
+            "Computer": "WIN-FILE-02",
+            "EventRecordID": 80700
+          },
+          "EventData": { "Foo": "bar" }
+        }
+      }
+    }
+  }
+]

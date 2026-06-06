@@ -204,7 +204,7 @@ def test_uncovered_event_id_still_maps_to_a_generic_event() -> None:
 
 def test_unregistered_source_tool_is_reported() -> None:
     record = RawRecord(
-        source_tool="chainsaw",  # a valid tool, but no mapper registered yet
+        source_tool="dissect",  # a valid tool, but no mapper registered yet (Phase 8)
         source_artifact="Sysmon.evtx",
         raw_ref=RawRef(source_file="x.csv", record="1"),
         data={"Timestamp": "2026-03-14T08:30:05Z"},

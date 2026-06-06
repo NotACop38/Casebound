@@ -1,0 +1,168 @@
+{
+  "source_file": "chainsaw_detections.json",
+  "event_count": 4,
+  "events": [
+    {
+      "event_id": "f0600bcecd8d427cf797a5494d528e096795f63f6c43ef9e3115353746144c92",
+      "datetime": "2026-03-14T08:42:17.123456Z",
+      "timestamp_raw": "2026-03-14T08:42:17.123456Z",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "Office Application Spawned PowerShell",
+      "host": "WIN-ACCT-07",
+      "principal": "CORP\\jdoe",
+      "action": "process_create",
+      "object": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "source_tool": "chainsaw",
+      "source_artifact": "Security.evtx",
+      "details": {
+        "win_event_id": 4688,
+        "channel": "Security",
+        "fields": {
+          "NewProcessName": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+          "ParentProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+          "CommandLine": "powershell.exe -nop -w hidden -enc SQBFAFgA",
+          "SubjectUserName": "jdoe",
+          "SubjectDomainName": "CORP"
+        },
+        "level": "high",
+        "rule_name": "Office Application Spawned PowerShell",
+        "rule_tags": [
+          "attack.initial_access",
+          "attack.t1566.001",
+          "attack.execution",
+          "attack.t1059.001"
+        ],
+        "rule_mitre_tags": [
+          "T1566.001",
+          "T1059.001"
+        ]
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "chainsaw_detections.json",
+        "record": "80038"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "985578ab3e285d10a15f5c1a3c29e9b75cae63a366d1bc49335f072b6a2f9d48",
+      "datetime": "2026-03-14T08:43:05Z",
+      "timestamp_raw": "2026-03-14T08:43:05Z",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "PowerShell Network Connection to Rare External Host",
+      "host": "WIN-ACCT-07",
+      "principal": "CORP\\jdoe",
+      "action": "network_connect",
+      "object": "203.0.113.77:443",
+      "source_tool": "chainsaw",
+      "source_artifact": "Microsoft-Windows-Sysmon%4Operational.evtx",
+      "details": {
+        "win_event_id": 3,
+        "channel": "Microsoft-Windows-Sysmon/Operational",
+        "fields": {
+          "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+          "DestinationHostname": "sync-update.example",
+          "DestinationIp": "203.0.113.77",
+          "DestinationPort": "443",
+          "User": "CORP\\jdoe"
+        },
+        "level": "high",
+        "rule_name": "PowerShell Network Connection to Rare External Host",
+        "rule_tags": [
+          "attack.command_and_control",
+          "attack.t1071.001"
+        ],
+        "rule_mitre_tags": [
+          "T1071.001"
+        ]
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "chainsaw_detections.json",
+        "record": "80114"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "68c0eb619794d2266a9a4cbcc50349c6ee22dd749b9646c294ce5e785518cbe5",
+      "datetime": "2026-03-14T08:56:40Z",
+      "timestamp_raw": "2026-03-14T08:56:40Z",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "Service Installed from World-Writable Temp Path",
+      "host": "WIN-FILE-02",
+      "principal": null,
+      "action": "service_install",
+      "object": "WinHelpSvc",
+      "source_tool": "chainsaw",
+      "source_artifact": "System.evtx",
+      "details": {
+        "win_event_id": 7045,
+        "channel": "System",
+        "fields": {
+          "ServiceName": "WinHelpSvc",
+          "ImagePath": "C:\\Windows\\Temp\\winhelpsvc.exe",
+          "ServiceType": "user mode service",
+          "StartType": "auto start"
+        },
+        "level": "critical",
+        "rule_name": "Service Installed from World-Writable Temp Path",
+        "rule_tags": [
+          "attack.persistence",
+          "attack.t1543.003"
+        ],
+        "rule_mitre_tags": [
+          "T1543.003"
+        ]
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 1.0,
+      "raw_ref": {
+        "source_file": "chainsaw_detections.json",
+        "record": "80492"
+      },
+      "tags": []
+    },
+    {
+      "event_id": "c4107263a7b7e18bec0573e98dd78e98f2fe93c98503c195d6a89ce42e2ff326",
+      "datetime": "2026-03-14T09:10:00Z",
+      "timestamp_raw": "2026-03-14T09:10:00Z",
+      "source_timezone": "UTC",
+      "timestamp_desc": "logged",
+      "message": "Uncovered Event With No Mapping",
+      "host": "WIN-FILE-02",
+      "principal": null,
+      "action": "other",
+      "object": null,
+      "source_tool": "chainsaw",
+      "source_artifact": "Application.evtx",
+      "details": {
+        "win_event_id": 9999,
+        "channel": "Application",
+        "fields": {
+          "Foo": "bar"
+        },
+        "level": "info",
+        "rule_name": "Uncovered Event With No Mapping",
+        "rule_tags": [
+          "attack.discovery"
+        ]
+      },
+      "attack_techniques": [],
+      "ioc_refs": [],
+      "confidence": 0.5,
+      "raw_ref": {
+        "source_file": "chainsaw_detections.json",
+        "record": "80700"
+      },
+      "tags": []
+    }
+  ]
+}

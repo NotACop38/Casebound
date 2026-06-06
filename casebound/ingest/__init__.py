@@ -18,11 +18,13 @@ TODO(Phase 3): add the remaining source adapters, each with a fixture and a
 from __future__ import annotations
 
 from casebound.ingest.base import IngestAdapter, RawRecord
+from casebound.ingest.chainsaw import ChainsawAdapter
 from casebound.ingest.eztools import EZToolsAdapter
 from casebound.ingest.generic_csv import ColumnMap, GenericCsvAdapter
 from casebound.ingest.hayabusa import HayabusaAdapter, channel_to_artifact
 
 __all__ = [
+    "ChainsawAdapter",
     "ColumnMap",
     "EZToolsAdapter",
     "GenericCsvAdapter",

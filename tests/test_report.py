@@ -197,6 +197,33 @@ def test_no_model_path_renders_deterministic_report_and_says_so(tmp_path: Path) 
     assert 'class="claim"' not in html
 
 
+def test_report_surfaces_episodes_and_iocs(tmp_path: Path) -> None:
+    # The report derives and renders the activity episodes (FR15) and the defanged
+    # indicator set (FR16) from the events, even with no model configured.
+    events = _events(tmp_path)
+    html = render_report(events, None, scenario="office_intrusion")
+
+    assert "Activity episodes" in html
+    assert "Indicators of compromise" in html
+    # An episode id appears as an EP- handle and the network indicators are defanged
+    # in the dedicated indicator section (the appendix still shows the raw evidence).
+    assert 'class="chip ep">EP-' in html
+    assert "sync-update[.]example" in html
+    assert "203[.]0[.]113[.]77" in html
+    iocs_section = html.split('id="iocs"', 1)[1].split('id="appendix"', 1)[0]
+    assert "203.0.113.77" not in iocs_section
+    assert "sync-update.example" not in iocs_section
+
+
+def test_report_episode_and_ioc_links_resolve_to_appendix_events(tmp_path: Path) -> None:
+    events = _events(tmp_path)
+    html = render_report(events, None, scenario="office_intrusion")
+    # Every event linked from an episode or an indicator is anchored in the appendix.
+    for event in events:
+        if f'href="#event-{event.event_id}"' in html:
+            assert f'id="event-{event.event_id}"' in html
+
+
 def test_evidence_strings_are_html_escaped(tmp_path: Path) -> None:
     # An event whose message carries markup must never inject it into the report.
     hostile = Event(

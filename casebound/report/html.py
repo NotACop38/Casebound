@@ -35,6 +35,8 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from casebound.enrich.cluster import Episode, cluster_events
+from casebound.enrich.ioc import Ioc, IocSet, extract_iocs
 from casebound.normalize.schema import Event, RawRef
 from casebound.verify.engine import VerificationResult, VerifiedClaim
 
@@ -99,7 +101,37 @@ def _claim_context(claim: VerifiedClaim) -> dict[str, Any]:
     }
 
 
-def _event_context(event: Event, provenance: Sequence[RawRef]) -> dict[str, Any]:
+def _episode_context(episode: Episode) -> dict[str, Any]:
+    """Build the template context for one activity episode."""
+    return {
+        "episode_id": episode.episode_id,
+        "host": episode.host,
+        "principal": episode.principal,
+        "start": episode.start,
+        "end": episode.end,
+        "event_count": episode.event_count,
+        "members": [{"id": eid, "short": eid[:_SHORT_ID_LEN]} for eid in episode.event_ids],
+    }
+
+
+def _ioc_context(ioc: Ioc) -> dict[str, Any]:
+    """Build the template context for one extracted indicator."""
+    return {
+        "ioc_id": ioc.ioc_id,
+        "ioc_type": ioc.ioc_type,
+        "defanged": ioc.defanged,
+        "event_count": ioc.event_count,
+        "events": [{"id": eid, "short": eid[:_SHORT_ID_LEN]} for eid in ioc.event_ids],
+    }
+
+
+def _event_context(
+    event: Event,
+    provenance: Sequence[RawRef],
+    *,
+    episode_id: str | None,
+    iocs: Sequence[Ioc],
+) -> dict[str, Any]:
     """Build the template context for one event (timeline row and appendix entry)."""
     technique_ids = [tech.technique_id for tech in event.attack_techniques]
     return {
@@ -119,6 +151,8 @@ def _event_context(event: Event, provenance: Sequence[RawRef]) -> dict[str, Any]
         "attack_techniques": [tech.to_dict() for tech in event.attack_techniques],
         "details": list(event.details.items()),
         "provenance": [f"{ref.source_file}#{ref.record}" for ref in provenance],
+        "episode_id": episode_id,
+        "iocs": [{"type": ioc.ioc_type, "defanged": ioc.defanged} for ioc in iocs],
     }
 
 
@@ -130,6 +164,8 @@ def render_report(
     source_tool: str = "hayabusa",
     model_label: str | None = None,
     provenance: Mapping[str, Sequence[RawRef]] | None = None,
+    episodes: Sequence[Episode] | None = None,
+    iocs: IocSet | None = None,
 ) -> str:
     """Render the self-contained HTML report from the pipeline output.
 
@@ -138,12 +174,32 @@ def render_report(
     audit); pass None for the deterministic no-model path (FR26), which renders the
     timeline, tags, and appendix with a notice that no narrative was produced.
 
+    ``episodes`` and ``iocs`` are the enrichment output (FR15, FR16). They are
+    optional: when omitted they are derived deterministically from ``events``, so a
+    report always surfaces the activity episodes and the indicator set, whether or
+    not the caller pre-computed them.
+
     The HTML is self-contained: the stylesheet is inlined and no asset is fetched
     at view time. Every accepted claim is rendered from verified fields with inline
     citations that link to the backing event in the appendix (FR32).
     """
     ordered = sorted(events, key=lambda e: (e.datetime, e.event_id))
     prov = provenance or {}
+
+    resolved_episodes = list(episodes) if episodes is not None else cluster_events(ordered).episodes
+    resolved_iocs = iocs if iocs is not None else extract_iocs(ordered).iocs
+
+    # Address each event by id to its episode and its referenced indicators, so the
+    # timeline and the appendix can annotate every row without re-deriving anything.
+    episode_of: dict[str, str] = {
+        event_id: episode.episode_id
+        for episode in resolved_episodes
+        for event_id in episode.event_ids
+    }
+    iocs_of: dict[str, list[Ioc]] = {}
+    for ioc in resolved_iocs:
+        for event_id in ioc.event_ids:
+            iocs_of.setdefault(event_id, []).append(ioc)
 
     no_model = verification is None
     accepted: list[VerifiedClaim] = list(verification.accepted) if verification else []
@@ -154,7 +210,15 @@ def render_report(
     )
     hosts = {event.host for event in ordered if event.host}
 
-    event_views = [_event_context(event, prov.get(event.event_id, ())) for event in ordered]
+    event_views = [
+        _event_context(
+            event,
+            prov.get(event.event_id, ()),
+            episode_id=episode_of.get(event.event_id),
+            iocs=iocs_of.get(event.event_id, ()),
+        )
+        for event in ordered
+    ]
 
     context: dict[str, Any] = {
         "scenario": scenario,
@@ -167,8 +231,12 @@ def render_report(
             "techniques": len(observed_techniques),
             "accepted": len(accepted),
             "rejected": len(audit_entries),
+            "episodes": len(resolved_episodes),
+            "iocs": len(resolved_iocs),
         },
         "observed_techniques": observed_techniques,
+        "episodes": [_episode_context(episode) for episode in resolved_episodes],
+        "iocs": [_ioc_context(ioc) for ioc in resolved_iocs],
         "accepted": [_claim_context(claim) for claim in accepted],
         "audit": [
             {
@@ -198,6 +266,8 @@ def write_report(
     source_tool: str = "hayabusa",
     model_label: str | None = None,
     provenance: Mapping[str, Sequence[RawRef]] | None = None,
+    episodes: Sequence[Episode] | None = None,
+    iocs: IocSet | None = None,
 ) -> Path:
     """Render the HTML report and write it to ``path``, returning the path written.
 
@@ -210,6 +280,8 @@ def write_report(
         source_tool=source_tool,
         model_label=model_label,
         provenance=provenance,
+        episodes=episodes,
+        iocs=iocs,
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(html, encoding="utf-8")

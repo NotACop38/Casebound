@@ -57,8 +57,8 @@ Exit criteria: each new adapter ships with a fixture and a normalization golden 
 Goal: turn events into an investigation.
 Exit criteria: episodes cluster sensibly on the scenario; all three report formats and the Navigator layer generate; metrics regenerate from the demo.
 
-- [ ] [A] Activity clustering into episodes by time, host, and principal (FR15).
-- [ ] [A] IOC extraction and defanging into a structured set, surfaced in reports (FR16).
+- [x] [A] Activity clustering into episodes by time, host, and principal (FR15).
+- [x] [A] IOC extraction and defanging into a structured set, surfaced in reports (FR16).
 - [ ] [A] JSON and Markdown report renderers (FR29, FR30).
 - [ ] [A] ATT&CK Navigator layer generation of observed techniques (FR31), with the layer committed for the scenario.
 - [ ] [A] Implement the metrics computation (PRD Section 12) and have the demo print and persist the numbers.

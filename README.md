@@ -8,11 +8,17 @@ Casebound turns raw host triage into a normalized forensic timeline, maps it to 
 
 [![ci](https://github.com/NotACop38/Casebound/actions/workflows/ci.yml/badge.svg)](https://github.com/NotACop38/Casebound/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
-![license](https://img.shields.io/badge/license-Apache--2.0-blue)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 ![status](https://img.shields.io/badge/status-alpha-orange)
 ![mitre](https://img.shields.io/badge/MITRE-ATT%26CK-c4291c)
 ![narrative](https://img.shields.io/badge/narrative-verified-2ea043)
 ![offline](https://img.shields.io/badge/core-runs%20offline-2ea043)
+
+<br>
+
+<a href="docs/images/report.png"><img src="docs/images/report.png" alt="A Casebound investigation report: a verified narrative whose every claim cites a real timeline event, above a rejected-claims audit that drops and logs the unsupported claims" width="900"></a>
+
+<sub>The self-contained HTML report, generated offline by <code>casebound demo</code>: a verified narrative whose every claim links to a real event, above the rejected-claims audit that drops and logs what the evidence did not support.</sub>
 
 </div>
 
@@ -158,8 +164,8 @@ A citation accuracy below 1.0 is a verifier bug, by design.
 |Hayabusa (CSV)                   |tool output |MVP                 |
 |Eric Zimmerman / KAPE (CSV)      |tool output |MVP                 |
 |Generic CSV (column-mapped)      |tool output |MVP                 |
-|Chainsaw                         |tool output |planned             |
-|Velociraptor, Plaso              |tool output |planned             |
+|Chainsaw                         |tool output |implemented         |
+|Velociraptor, Plaso              |tool output |implemented         |
 |EVTX, MFT, registry (via Dissect)|raw artifact|later, license-gated|
 
 Casebound normalizes and reasons; in the MVP it does not reinvent artifact parsing. It stands on the parsers responders already trust.

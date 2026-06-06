@@ -88,10 +88,10 @@ Exit criteria: invariant tests enforce the non-goals; SECURITY.md and the threat
 Goal: a README that lands the value in under ten seconds.
 Exit criteria: every embedded asset and code snippet exists on disk; the guarantee and the metrics are above the fold.
 
-- [ ] [A] Hero: name, one-line value prop, the HTML report screenshot, and the claim-to-evidence side-by-side.
-- [ ] [A] The guarantee in four bullets, the quickstart, the metrics table, the supported-sources list.
-- [ ] [A] Gracious prior-art note (credit AIFT and the academic work) and the defensive-scope statement.
-- [ ] [A] Badges per D3, the limitations section, the license and acknowledgments.
+- [x] [A] Hero: name, one-line value prop, the HTML report screenshot, and the claim-to-evidence side-by-side.
+- [x] [A] The guarantee in four bullets, the quickstart, the metrics table, the supported-sources list.
+- [x] [A] Gracious prior-art note (credit AIFT and the academic work) and the defensive-scope statement.
+- [x] [A] Badges per D3, the limitations section, the license and acknowledgments.
 
 ## Phase 8 - Raw mode (optional, license-gated)
 

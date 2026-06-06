@@ -8,7 +8,7 @@ against a real timeline event or rejected before the analyst sees it.
 The deterministic layer is the source of truth. The language model is a drafting
 aid that is fenced by the verifier and never has the authority to state a fact.
 
-See PRD.md and ENGINEERING CHECKLIST.md for the full contract.
+See docs/PRD.md and docs/ENGINEERING_CHECKLIST.md for the full contract.
 """
 
 from __future__ import annotations

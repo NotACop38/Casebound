@@ -22,11 +22,39 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from casebound.normalize.schema import SOURCE_TOOLS, RawRef
 
-__all__ = ["IngestAdapter", "RawRecord"]
+__all__ = ["IngestAdapter", "RawRecord", "coerce_row", "scalar_to_str"]
+
+
+def coerce_row(row: Mapping[str, str | None]) -> dict[str, str]:
+    """Normalize a ``csv.DictReader`` row to a clean ``str`` to ``str`` mapping.
+
+    DictReader yields ``None`` for a column a short row omits, and collects any
+    extra cells under the ``None`` restkey. Replace a missing value with ``""`` and
+    drop the ``None`` key, so a mapper always sees plain strings. The CSV adapters
+    share this so the contract lives in one place.
+    """
+    return {
+        key: (value if value is not None else "") for key, value in row.items() if key is not None
+    }
+
+
+def scalar_to_str(value: Any) -> str:
+    """Render a scalar JSON value as a string; a container becomes an empty string.
+
+    A ``None`` or a nested object or array yields ``""`` (the JSON adapters lift
+    nested structure separately), and a boolean renders as lowercase ``true`` or
+    ``false`` rather than Python's capitalized ``str(bool)``. The JSONL and JSON
+    adapters share this so the conversion never drifts between them.
+    """
+    if value is None or isinstance(value, (dict, list)):
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
 
 
 @dataclass(frozen=True)

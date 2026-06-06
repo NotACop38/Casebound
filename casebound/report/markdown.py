@@ -254,7 +254,7 @@ def _render(model: ReportModel) -> str:
                     [
                         _cell(ioc["ioc_type"]),
                         _mono(ioc["defanged"]),
-                        str(len(ioc["event_ids"])),
+                        str(ioc["event_count"]),
                     ]
                 )
                 + "|"

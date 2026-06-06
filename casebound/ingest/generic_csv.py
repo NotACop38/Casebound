@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
 
-from casebound.ingest.base import IngestAdapter, RawRecord
+from casebound.ingest.base import IngestAdapter, RawRecord, coerce_row
 from casebound.normalize.mappers.generic_csv import (
     GENERIC_DETAIL_PREFIX,
     GENERIC_KEY_ACTION,
@@ -186,8 +186,7 @@ class GenericCsvAdapter(IngestAdapter):
         with source.open("r", encoding="utf-8", newline="") as handle:
             reader = csv.DictReader(handle)
             for line_number, row in enumerate(reader, start=2):
-                clean = {key: (value or "") for key, value in row.items() if key is not None}
-                yield self._to_record(source, line_number, clean)
+                yield self._to_record(source, line_number, coerce_row(row))
 
     def _to_record(self, source: Path, line_number: int, row: dict[str, str]) -> RawRecord:
         cmap = self._map

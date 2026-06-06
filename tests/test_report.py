@@ -224,6 +224,43 @@ def test_report_episode_and_ioc_links_resolve_to_appendix_events(tmp_path: Path)
             assert f'id="event-{event.event_id}"' in html
 
 
+def test_report_supports_dark_mode_and_stays_self_contained(tmp_path: Path) -> None:
+    # The report adapts to the reader's OS dark-mode preference, and it does so
+    # without fetching anything: the dark palette is an inline token override, so
+    # the self-contained guarantee (FR28) still holds.
+    events = _events(tmp_path)
+    html = render_report(events, None, scenario="office_intrusion")
+    assert "@media (prefers-color-scheme: dark)" in html
+    _assert_self_contained(html)
+
+
+def test_null_fields_render_blank_not_the_literal_none() -> None:
+    # The canonical schema allows a null host, principal, or object. The HTML report
+    # must blank those cells, exactly as the Markdown and JSON renderers do, and must
+    # never surface the literal text "None" to a reader (Jinja renders Python None as
+    # the string "None" by default, so the template has to guard the nullable fields).
+    sparse = Event(
+        datetime="2026-03-14T08:43:05Z",
+        timestamp_raw="2026-03-14 04:43:05.000 -04:00",
+        source_timezone="America/New_York",
+        timestamp_desc="logged",
+        message="An outbound network connection with no recorded principal.",
+        action="network_connect",
+        source_tool="hayabusa",
+        source_artifact="Security.evtx",
+        raw_ref=RawRef(source_file="synthetic_hayabusa.csv", record="line:3"),
+        host=None,
+        principal=None,
+        object=None,
+    )
+    html = render_report([sparse], None, scenario="nulls")
+    # A null field must never reach the reader as the word "None": not in the
+    # timeline cells (>None</td>) nor in the appendix definition list (>None</dd>).
+    assert ">None<" not in html
+    # The blanked cells are still rendered, so the row and the appendix entry exist.
+    assert f'id="event-{sparse.event_id}"' in html
+
+
 def test_evidence_strings_are_html_escaped(tmp_path: Path) -> None:
     # An event whose message carries markup must never inject it into the report.
     hostile = Event(

@@ -25,7 +25,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import ClassVar
 
-from casebound.ingest.base import IngestAdapter, RawRecord
+from casebound.ingest.base import IngestAdapter, RawRecord, coerce_row
 from casebound.normalize.schema import RawRef
 
 __all__ = ["L2TCSV_COLUMNS", "PlasoAdapter"]
@@ -72,11 +72,7 @@ class PlasoAdapter(IngestAdapter):
                 yield self._to_record(source, line_number, row)
 
     def _to_record(self, source: Path, line_number: int, row: dict[str, str | None]) -> RawRecord:
-        data: dict[str, str] = {
-            key: (value if value is not None else "")
-            for key, value in row.items()
-            if key is not None
-        }
+        data = coerce_row(row)
         return RawRecord(
             source_tool=self.source_tool,
             source_artifact=self._artifact(data),

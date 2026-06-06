@@ -115,6 +115,34 @@ def test_json_and_html_report_agree_on_events_and_stats(tmp_path: Path) -> None:
         assert tid in html
 
 
+def test_html_and_json_agree_on_field_values_including_nulls(tmp_path: Path) -> None:
+    # Content parity at the field level: the HTML and the JSON must agree on the
+    # canonical fields. This is the drift class the shared model exists to prevent;
+    # in particular a null host, principal, or object must render as a blank cell in
+    # the HTML (never the literal text "None"), matching the JSON's real null and the
+    # Markdown's blank cell. The office_intrusion scenario carries several such nulls.
+    events = _events(tmp_path)
+    html = render_report(events, None, scenario="office_intrusion")
+    body = json.loads(render_json_report(events, None, scenario="office_intrusion"))
+
+    # The HTML must never surface a Python None as text for a nullable field.
+    assert ">None<" not in html
+
+    saw_null = False
+    for event in body["events"]:
+        for field in ("host", "principal", "object", "action"):
+            value = event[field]
+            if value is None:
+                saw_null = True
+            else:
+                # Every present canonical value the JSON carries is shown in the HTML
+                # (these fields are plain ASCII paths, accounts, ips, and verbs, so
+                # they are not transformed by HTML escaping).
+                assert value in html
+    # The scenario is only an honest null-parity test if it actually has a null.
+    assert saw_null
+
+
 def test_markdown_report_renders_every_section(tmp_path: Path) -> None:
     events = _events(tmp_path)
     md = render_markdown_report(events, _verified(events), scenario="office_intrusion")

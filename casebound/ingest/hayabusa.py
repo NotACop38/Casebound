@@ -25,7 +25,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import ClassVar
 
-from casebound.ingest.base import IngestAdapter, RawRecord
+from casebound.ingest.base import IngestAdapter, RawRecord, coerce_row
 from casebound.normalize.schema import RawRef
 
 __all__ = ["HayabusaAdapter", "channel_to_artifact"]
@@ -83,12 +83,7 @@ class HayabusaAdapter(IngestAdapter):
                 yield self._to_record(source, line_number, row)
 
     def _to_record(self, source: Path, line_number: int, row: dict[str, str | None]) -> RawRecord:
-        # DictReader yields None for a column the row is missing; normalize to "".
-        data: dict[str, str] = {
-            key: (value if value is not None else "")
-            for key, value in row.items()
-            if key is not None
-        }
+        data = coerce_row(row)
         channel = data.get("Channel", "")
         record_id = (data.get("RecordID") or "").strip()
         record = record_id if record_id else f"line:{line_number}"

@@ -33,7 +33,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, ClassVar
 
-from casebound.ingest.base import IngestAdapter, RawRecord
+from casebound.ingest.base import IngestAdapter, RawRecord, scalar_to_str
 from casebound.normalize.mappers.chainsaw import (
     CHAINSAW_DATA_PREFIX,
     CHAINSAW_KEY_CHANNEL,
@@ -51,15 +51,6 @@ __all__ = ["ChainsawAdapter"]
 
 # The placeholder source artifact when a detection names no source path or channel.
 _DEFAULT_ARTIFACT = "chainsaw_detection"
-
-
-def _as_str(value: Any) -> str:
-    """Render a scalar JSON value as a string; containers become an empty string."""
-    if value is None or isinstance(value, (dict, list)):
-        return ""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    return str(value)
 
 
 class ChainsawAdapter(IngestAdapter):
@@ -89,15 +80,15 @@ class ChainsawAdapter(IngestAdapter):
 
         data: dict[str, str] = {
             CHAINSAW_KEY_TIMESTAMP: self._timestamp(detection, system),
-            CHAINSAW_KEY_NAME: _as_str(detection.get("name")),
+            CHAINSAW_KEY_NAME: scalar_to_str(detection.get("name")),
             CHAINSAW_KEY_EVENTID: self._event_id(system),
-            CHAINSAW_KEY_CHANNEL: _as_str(system.get("Channel")),
-            CHAINSAW_KEY_COMPUTER: _as_str(system.get("Computer")),
-            CHAINSAW_KEY_LEVEL: _as_str(detection.get("level")),
+            CHAINSAW_KEY_CHANNEL: scalar_to_str(system.get("Channel")),
+            CHAINSAW_KEY_COMPUTER: scalar_to_str(system.get("Computer")),
+            CHAINSAW_KEY_LEVEL: scalar_to_str(detection.get("level")),
             CHAINSAW_KEY_TAGS: self._tags(detection),
         }
         for key, value in event_data.items():
-            data[f"{CHAINSAW_DATA_PREFIX}{key}"] = _as_str(value)
+            data[f"{CHAINSAW_DATA_PREFIX}{key}"] = scalar_to_str(value)
 
         return RawRecord(
             source_tool=self.source_tool,
@@ -119,13 +110,13 @@ class ChainsawAdapter(IngestAdapter):
     def _timestamp(detection: dict[str, Any], system: dict[str, Any]) -> str:
         top = detection.get("timestamp")
         if top:
-            return _as_str(top)
+            return scalar_to_str(top)
         time_created = system.get("TimeCreated")
         if isinstance(time_created, dict):
             attributes = time_created.get("#attributes")
             if isinstance(attributes, dict) and attributes.get("SystemTime"):
-                return _as_str(attributes.get("SystemTime"))
-        return _as_str(time_created)
+                return scalar_to_str(attributes.get("SystemTime"))
+        return scalar_to_str(time_created)
 
     @staticmethod
     def _event_id(system: dict[str, Any]) -> str:
@@ -133,31 +124,31 @@ class ChainsawAdapter(IngestAdapter):
         # The EventID can be a scalar or, in verbose evtx JSON, an object with the
         # value under "#text"; prefer the latter when present.
         if isinstance(event_id, dict):
-            return _as_str(event_id.get("#text"))
-        return _as_str(event_id)
+            return scalar_to_str(event_id.get("#text"))
+        return scalar_to_str(event_id)
 
     @staticmethod
     def _tags(detection: dict[str, Any]) -> str:
         tags = detection.get("tags")
         if not isinstance(tags, list):
             return ""
-        return CHAINSAW_TAG_SEP.join(_as_str(tag) for tag in tags if _as_str(tag))
+        return CHAINSAW_TAG_SEP.join(scalar_to_str(tag) for tag in tags if scalar_to_str(tag))
 
     @staticmethod
     def _artifact(detection: dict[str, Any], system: dict[str, Any]) -> str:
         document = detection.get("document", {})
         if isinstance(document, dict):
-            path = _as_str(document.get("path")).strip()
+            path = scalar_to_str(document.get("path")).strip()
             if path:
                 # The source artifact is the file the detection came from; use its
                 # base name so provenance is stable across collection paths.
                 return Path(path.replace("\\", "/")).name or path
-        channel = _as_str(system.get("Channel")).strip()
+        channel = scalar_to_str(system.get("Channel")).strip()
         if channel:
             return f"{channel.replace('/', '%4')}.evtx"
         return _DEFAULT_ARTIFACT
 
     @staticmethod
     def _record_id(system: dict[str, Any], index: int) -> str:
-        record_id = _as_str(system.get("EventRecordID")).strip()
+        record_id = scalar_to_str(system.get("EventRecordID")).strip()
         return record_id if record_id else f"detection:{index}"

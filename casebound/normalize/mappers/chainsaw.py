@@ -13,7 +13,7 @@ mapper needs under reserved keys; this mapper derives the canonical fields:
   - ``datetime`` and ``source_timezone`` come from the detection timestamp via the
     timezone normalizer (FR9); Chainsaw emits RFC3339 UTC.
   - ``action``, ``principal``, and ``object`` follow from the Windows EventID
-    through a small documented table, reading the relevant EventData keys. An
+    through the shared ``winevent`` table reading the relevant EventData keys. An
     EventID the table does not cover still produces an event (a generic ``other``
     action at reduced confidence) rather than being dropped (FR8).
   - ``message`` is the Chainsaw rule name, the most human-readable summary.
@@ -25,6 +25,10 @@ mapper needs under reserved keys; this mapper derives the canonical fields:
     techniques.
   - ``raw_ref`` is carried straight through from the record's provenance (FR11).
 
+The EventID to canonical-field rule lives in ``winevent`` so every Windows
+event-log source (Chainsaw, Velociraptor, the Dissect raw EVTX adapter) maps the
+same events identically.
+
 Style: no em dashes or en dashes anywhere (PRD Section 15).
 """
 
@@ -32,10 +36,19 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from casebound.normalize.mappers.base import Mapper, MappingError
+from casebound.normalize.mappers.winevent import (
+    FALLBACK_ACTION,
+    FALLBACK_CONFIDENCE,
+    MAPPED_CONFIDENCE,
+    coerce_event_id,
+    derive_object,
+    derive_principal,
+    mapping_for,
+    nullable,
+)
 from casebound.normalize.schema import Event
 from casebound.normalize.timezone import TimestampError, normalize_timestamp
 
@@ -53,7 +66,6 @@ __all__ = [
     "CHAINSAW_KEY_TAGS",
     "CHAINSAW_KEY_TIMESTAMP",
     "ChainsawMapper",
-    "WinEventMapping",
     "normalize_attack_tag",
 ]
 
@@ -72,58 +84,9 @@ CHAINSAW_DATA_PREFIX = "_cs_data:"
 # The Chainsaw tags multi-value separator the adapter joins on.
 CHAINSAW_TAG_SEP = "¦"
 
-_FALLBACK_ACTION = "other"
-_MAPPED_CONFIDENCE = 1.0
-_FALLBACK_CONFIDENCE = 0.5
-
 # A Sigma ATT&CK tag such as "attack.t1059.001" or "attack.t1003"; the technique id
 # is captured and uppercased to the canonical "T1059.001" form.
 _ATTACK_TAG_RE = re.compile(r"^attack\.(t\d{4}(?:\.\d{3})?)$", re.IGNORECASE)
-
-
-@dataclass(frozen=True)
-class WinEventMapping:
-    """How one Windows EventID becomes canonical fields, from Chainsaw EventData."""
-
-    action: str
-    object_keys: tuple[str, ...] = ()
-    principal_user_key: str | None = None
-    principal_domain_key: str | None = None
-    network_endpoint: bool = False
-
-
-# The classic Security/System channels keyed by EventID, and the Sysmon channel
-# kept separate because its small EventIDs would collide. Focused on the showcase
-# scenario; new ids are added here as sources need them.
-_WINDOWS_EVENTS: dict[int, WinEventMapping] = {
-    4624: WinEventMapping(
-        action="logon",
-        object_keys=("IpAddress",),
-        principal_user_key="TargetUserName",
-        principal_domain_key="TargetDomainName",
-    ),
-    4688: WinEventMapping(
-        action="process_create",
-        object_keys=("NewProcessName",),
-        principal_user_key="SubjectUserName",
-        principal_domain_key="SubjectDomainName",
-    ),
-    4698: WinEventMapping(
-        action="scheduled_task_create",
-        object_keys=("TaskName",),
-        principal_user_key="SubjectUserName",
-        principal_domain_key="SubjectDomainName",
-    ),
-    7045: WinEventMapping(action="service_install", object_keys=("ServiceName",)),
-}
-
-_SYSMON_EVENTS: dict[int, WinEventMapping] = {
-    1: WinEventMapping(action="process_create", object_keys=("Image",), principal_user_key="User"),
-    3: WinEventMapping(action="network_connect", network_endpoint=True, principal_user_key="User"),
-    10: WinEventMapping(action="process_access", object_keys=("TargetImage",)),
-    11: WinEventMapping(action="file_create", object_keys=("TargetFilename",)),
-    13: WinEventMapping(action="registry_set", object_keys=("TargetObject",)),
-}
 
 
 def normalize_attack_tag(tag: str) -> str | None:
@@ -137,13 +100,6 @@ def normalize_attack_tag(tag: str) -> str | None:
     return match.group(1).upper() if match else None
 
 
-def _nullable(value: str | None) -> str | None:
-    if value is None:
-        return None
-    trimmed = value.strip()
-    return trimmed or None
-
-
 def _event_data(data: Mapping[str, str]) -> dict[str, str]:
     """Pull the EventData key/value pairs back out of the reserved-prefixed keys."""
     return {
@@ -151,44 +107,6 @@ def _event_data(data: Mapping[str, str]) -> dict[str, str]:
         for key, value in data.items()
         if key.startswith(CHAINSAW_DATA_PREFIX)
     }
-
-
-def _principal(fields: Mapping[str, str], mapping: WinEventMapping) -> str | None:
-    if mapping.principal_user_key is None:
-        return None
-    user = _nullable(fields.get(mapping.principal_user_key))
-    if user is None:
-        return None
-    domain = (
-        _nullable(fields.get(mapping.principal_domain_key))
-        if mapping.principal_domain_key is not None
-        else None
-    )
-    return f"{domain}\\{user}" if domain is not None else user
-
-
-def _object(fields: Mapping[str, str], mapping: WinEventMapping) -> str | None:
-    if mapping.network_endpoint:
-        target = _nullable(fields.get("DestinationIp")) or _nullable(
-            fields.get("DestinationHostname")
-        )
-        if target is None:
-            return None
-        port = _nullable(fields.get("DestinationPort"))
-        return f"{target}:{port}" if port is not None else target
-    for key in mapping.object_keys:
-        value = _nullable(fields.get(key))
-        if value is not None:
-            return value
-    return None
-
-
-def _coerce_event_id(raw: str) -> int | str:
-    text = raw.strip()
-    try:
-        return int(text)
-    except ValueError:
-        return text
 
 
 class ChainsawMapper(Mapper):
@@ -204,15 +122,13 @@ class ChainsawMapper(Mapper):
             raise MappingError(str(exc)) from exc
 
         channel = (data.get(CHAINSAW_KEY_CHANNEL) or "").strip()
-        win_event_id = _coerce_event_id(data.get(CHAINSAW_KEY_EVENTID, ""))
+        win_event_id = coerce_event_id(data.get(CHAINSAW_KEY_EVENTID, ""))
         fields = _event_data(data)
-        mapping = self._mapping_for(channel, win_event_id)
+        mapping = mapping_for(channel, win_event_id)
 
-        action = mapping.action if mapping is not None else _FALLBACK_ACTION
-        confidence = _MAPPED_CONFIDENCE if mapping is not None else _FALLBACK_CONFIDENCE
-        principal = _principal(fields, mapping) if mapping is not None else None
-        obj = _object(fields, mapping) if mapping is not None else None
-        host = _nullable(data.get(CHAINSAW_KEY_COMPUTER))
+        action = mapping.action if mapping is not None else FALLBACK_ACTION
+        confidence = MAPPED_CONFIDENCE if mapping is not None else FALLBACK_CONFIDENCE
+        host = nullable(data.get(CHAINSAW_KEY_COMPUTER))
 
         try:
             return Event(
@@ -226,8 +142,8 @@ class ChainsawMapper(Mapper):
                 source_artifact=record.source_artifact,
                 raw_ref=record.raw_ref,
                 host=host,
-                principal=principal,
-                object=obj,
+                principal=derive_principal(fields, mapping),
+                object=derive_object(fields, mapping),
                 details=self._details(data, channel, win_event_id, fields),
                 confidence=confidence,
             )
@@ -235,17 +151,10 @@ class ChainsawMapper(Mapper):
             raise MappingError(f"could not build a canonical event: {exc}") from exc
 
     @staticmethod
-    def _mapping_for(channel: str, win_event_id: int | str) -> WinEventMapping | None:
-        if not isinstance(win_event_id, int):
-            return None
-        table = _SYSMON_EVENTS if "Sysmon" in channel else _WINDOWS_EVENTS
-        return table.get(win_event_id)
-
-    @staticmethod
     def _message(
         data: Mapping[str, str], channel: str, win_event_id: int | str, host: str | None
     ) -> str:
-        name = _nullable(data.get(CHAINSAW_KEY_NAME))
+        name = nullable(data.get(CHAINSAW_KEY_NAME))
         if name is not None:
             return name
         where = host or channel or "unknown host"
@@ -263,10 +172,10 @@ class ChainsawMapper(Mapper):
             "channel": channel,
             "fields": dict(fields),
         }
-        level = _nullable(data.get(CHAINSAW_KEY_LEVEL))
+        level = nullable(data.get(CHAINSAW_KEY_LEVEL))
         if level is not None:
             details["level"] = level
-        name = _nullable(data.get(CHAINSAW_KEY_NAME))
+        name = nullable(data.get(CHAINSAW_KEY_NAME))
         if name is not None:
             details["rule_name"] = name
         raw_tags = [

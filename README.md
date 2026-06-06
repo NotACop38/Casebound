@@ -139,7 +139,7 @@ A single Python package with firm module boundaries, each independently testable
 |`narrate`  |The provider-agnostic model interface and the drafting loop             |
 |`report`   |HTML, JSON, and Markdown renderers; ATT&CK Navigator layer              |
 |`generate` |The synthetic evidence generator and scenario definitions               |
-|`cli`      |The command surface (ingest, normalize, analyze, report, demo, generate)|
+|`cli`      |The command surface (demo, generate, version; granular ingest, normalize, analyze, report are planned)|
 |`web`      |Optional FastAPI viewer: browse the timeline and report (reuses `report`)|
 
 See <docs/PRD.md> for the full design and <docs/verification.md> for the claim and citation contract.

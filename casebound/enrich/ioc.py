@@ -149,12 +149,18 @@ class Ioc:
         return len(self.event_ids)
 
     def to_dict(self) -> dict[str, object]:
-        """Render the indicator as a JSON-ready dict."""
+        """Render the indicator as a JSON-ready dict.
+
+        Carries ``event_count`` alongside ``event_ids`` so the serialized indicator
+        is symmetric with ``Episode.to_dict`` and every renderer reads the count
+        from one place rather than re-deriving it.
+        """
         return {
             "ioc_id": self.ioc_id,
             "ioc_type": self.ioc_type,
             "value": self.value,
             "defanged": self.defanged,
+            "event_count": self.event_count,
             "event_ids": list(self.event_ids),
         }
 

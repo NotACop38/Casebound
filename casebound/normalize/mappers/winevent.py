@@ -89,6 +89,13 @@ WINDOWS_EVENTS: dict[int, WinEventMapping] = {
         principal_user_key="SubjectUserName",
         principal_domain_key="SubjectDomainName",
     ),
+    5140: WinEventMapping(
+        action="network_share_access",
+        object_keys=("ShareName",),
+        principal_user_key="SubjectUserName",
+        principal_domain_key="SubjectDomainName",
+    ),
+    7036: WinEventMapping(action="service_control", object_keys=("ServiceName",)),
     7045: WinEventMapping(action="service_install", object_keys=("ServiceName",)),
 }
 
@@ -133,9 +140,14 @@ def mapping_for(channel: str, event_id: int | str) -> WinEventMapping | None:
     return table.get(event_id)
 
 
-def derive_principal(fields: Mapping[str, str], mapping: WinEventMapping) -> str | None:
-    """Build the acting principal as ``DOMAIN\\user`` or ``user`` from EventData."""
-    if mapping.principal_user_key is None:
+def derive_principal(fields: Mapping[str, str], mapping: WinEventMapping | None) -> str | None:
+    """Build the acting principal as ``DOMAIN\\user`` or ``user`` from EventData.
+
+    An uncovered EventID has no mapping, so ``mapping`` may be None; that yields no
+    principal, the same as a mapping that names no principal key. Letting the helper
+    absorb the None case keeps the per-source callers free of a repeated guard.
+    """
+    if mapping is None or mapping.principal_user_key is None:
         return None
     user = nullable(fields.get(mapping.principal_user_key))
     if user is None:
@@ -148,8 +160,16 @@ def derive_principal(fields: Mapping[str, str], mapping: WinEventMapping) -> str
     return f"{domain}\\{user}" if domain is not None else user
 
 
-def derive_object(fields: Mapping[str, str], mapping: WinEventMapping) -> str | None:
-    """Resolve the primary object: a network endpoint or the first present key."""
+def derive_object(fields: Mapping[str, str], mapping: WinEventMapping | None) -> str | None:
+    """Resolve the primary object: a network endpoint or the first present key.
+
+    ``mapping`` may be None for an uncovered EventID, which yields no object. For a
+    network event the destination ip is preferred over the hostname (an ip is
+    unambiguous) and the port is appended when present; both the ip and the hostname
+    remain in the preserved EventData for enrichment.
+    """
+    if mapping is None:
+        return None
     if mapping.network_endpoint:
         target = nullable(fields.get("DestinationIp")) or nullable(
             fields.get("DestinationHostname")

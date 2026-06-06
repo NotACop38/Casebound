@@ -34,7 +34,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import ClassVar
 
-from casebound.ingest.base import IngestAdapter, RawRecord
+from casebound.ingest.base import IngestAdapter, RawRecord, coerce_row
 from casebound.normalize.mappers.eztools import EZ_TIMESTAMP_DESC_KEY, EZ_TIMESTAMP_KEY
 from casebound.normalize.schema import RawRef
 
@@ -79,12 +79,7 @@ class EZToolsAdapter(IngestAdapter):
     def _expand_row(
         self, source: Path, line_number: int, row: dict[str, str | None]
     ) -> Iterator[RawRecord]:
-        # DictReader yields None for a column the row is missing; normalize to "".
-        data: dict[str, str] = {
-            key: (value if value is not None else "")
-            for key, value in row.items()
-            if key is not None
-        }
+        data = coerce_row(row)
         identity = self._record_identity(data, line_number)
         for column, desc in SI_TIMESTAMP_COLUMNS:
             timestamp = (data.get(column) or "").strip()

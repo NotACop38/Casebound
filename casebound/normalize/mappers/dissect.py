@@ -146,8 +146,8 @@ class DissectMapper(Mapper):
 
         action = mapping.action if mapping is not None else FALLBACK_ACTION
         confidence = MAPPED_CONFIDENCE if mapping is not None else FALLBACK_CONFIDENCE
-        principal = derive_principal(fields, mapping) if mapping is not None else None
-        obj = derive_object(fields, mapping) if mapping is not None else None
+        principal = derive_principal(fields, mapping)
+        obj = derive_object(fields, mapping)
         host = nullable(data.get(DISSECT_EVTX_COMPUTER_KEY))
         provider = nullable(data.get(DISSECT_EVTX_PROVIDER_KEY))
 

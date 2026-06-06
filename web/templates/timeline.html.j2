@@ -5,9 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Casebound timeline: {{ case.title }}</title>
 <style>
-:root { --ink: #1b1f24; --muted: #5b6470; --line: #d8dee6; --panel: #f6f8fa; --link: #0a4fa0; --chip: #eaeef3; }
+:root { --bg: #ffffff; --ink: #1b1f24; --muted: #5b6470; --line: #d8dee6; --panel: #f6f8fa; --link: #0a4fa0; --chip: #eaeef3; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0d1117; --ink: #e6edf3; --muted: #9198a1; --line: #30363d; --panel: #161b22; --link: #4493f8; --chip: #21262d; }
+}
 * { box-sizing: border-box; }
-body { margin: 0; font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--ink); background: #ffffff; }
+body { margin: 0; font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--ink); background: var(--bg); }
+.tablewrap { overflow-x: auto; }
 .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
 header.masthead { border-bottom: 2px solid var(--ink); padding-bottom: 16px; margin-bottom: 8px; }
 header.masthead h1 { margin: 0 0 4px; font-size: 24px; letter-spacing: -0.01em; }
@@ -57,6 +61,7 @@ footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 14px;
   deterministically. Open the report for the verified narrative, episodes, indicators, and the
   evidence appendix.</p>
   {% if events %}
+  <div class="tablewrap">
   <table>
     <thead>
       <tr><th>Time (UTC)</th><th>Host</th><th>Principal</th><th>Action</th><th>Object</th><th>ATT&amp;CK</th></tr>
@@ -74,6 +79,7 @@ footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 14px;
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <p class="empty">This case has no events.</p>
   {% endif %}

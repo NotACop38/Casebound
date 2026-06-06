@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/NotACop38/casebound/security/advisories/new
+    about: Please report vulnerabilities privately through GitHub's "Report a vulnerability" flow, not as a public issue. See SECURITY.md.
+  - name: Question or discussion
+    url: https://github.com/NotACop38/casebound/discussions
+    about: For questions, ideas, and general discussion rather than a concrete bug or change.

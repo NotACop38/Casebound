@@ -1,0 +1,34 @@
+# Source distribution contents. The wheel ships only the casebound package (see
+# [tool.setuptools.packages.find] in pyproject.toml); the sdist additionally
+# carries a coherent, self-testable source snapshot. Style: no em dashes or en
+# dashes anywhere.
+
+include LICENSE
+include README.md
+include CHANGELOG.md
+include CONTRIBUTING.md
+include SECURITY.md
+include Makefile
+
+# The validation source of truth and its worked examples, referenced by the tests
+# and the CI gate.
+graft schema
+
+# The bundled synthetic samples the demo, the metrics, and several tests compare
+# against. Fully synthetic and safe (see samples/README.md), no real data.
+graft samples
+
+# The test suite plus its fixtures and golden files, so the shipped tests run from
+# an unpacked sdist.
+graft tests
+
+# The offline CI gate, so 'make ci' works from an unpacked sdist.
+graft scripts
+
+# Never ship caches, compiled artifacts, or build output.
+global-exclude *.py[cod]
+global-exclude *.so
+prune **/__pycache__
+prune out
+prune dist
+prune build

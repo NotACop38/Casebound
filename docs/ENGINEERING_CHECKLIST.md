@@ -114,10 +114,10 @@ Exit criteria: the UI reuses the report layer unchanged and preserves all offlin
 Goal: forkable, contributable, releasable.
 Exit criteria: a stranger can add an ingestion adapter and get it merged via CI; a clean-clone demo reproduces the metrics with no keys; v0.1.0 is tagged.
 
-- [ ] [A] CONTRIBUTING.md (the adapter authoring standard plus the defensive line), docs/authoring.md (“add an ingestion source in an afternoon”).
-- [ ] [A] Issue and PR templates, including a “new source” template that requires a fixture and a golden test.
-- [ ] [A] Release dry run: build sdist and wheel, install into a fresh environment, run the demo end to end, confirm the metrics, inspect the wheel for stray fixtures or secrets, draft release notes and CHANGELOG.md.
-- [ ] [A] Tag v0.1.0. Set the repo description, topics, and social preview per D3 tooling.
+- [x] [A] CONTRIBUTING.md (the adapter authoring standard plus the defensive line), docs/authoring.md (“add an ingestion source in an afternoon”).
+- [x] [A] Issue and PR templates, including a “new source” template that requires a fixture and a golden test.
+- [x] [A] Release dry run: build sdist and wheel, install into a fresh environment, run the demo end to end, confirm the metrics, inspect the wheel for stray fixtures or secrets, draft release notes and CHANGELOG.md.
+- [x] [A] Tag v0.1.0. Set the repo description, topics, and social preview per D3 tooling. (Tag applied locally; the repo description, topics, and social preview remain manual-only steps, see below.)
 
 ## Cross-cutting / always-on
 

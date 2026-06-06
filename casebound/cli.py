@@ -86,6 +86,8 @@ class DemoResult:
     event_count: int
     problem_count: int
     technique_count: int
+    episode_count: int
+    ioc_count: int
     accepted_count: int
     rejected_count: int
     no_model: bool
@@ -127,6 +129,8 @@ def run_demo(
     ``max_rounds`` overrides the verifier's revision-round budget.
     """
     from casebound.enrich.attack import tag_events
+    from casebound.enrich.cluster import cluster_events
+    from casebound.enrich.ioc import extract_iocs
     from casebound.generate import DEFAULT_SEED, generate
     from casebound.generate.synth import CSV_FILENAME
     from casebound.ingest import HayabusaAdapter
@@ -146,30 +150,43 @@ def run_demo(
     normalized = normalize_records(HayabusaAdapter().read(csv_path))
     events = tag_events(normalized.events)
 
+    # Enrich the tagged events into episodes and indicators (FR15, FR16). Each step
+    # returns event copies carrying its tags or refs; the chain leaves both on every
+    # event, and the report surfaces the episode list and the indicator set.
+    clustered = cluster_events(events)
+    extracted = extract_iocs(clustered.events)
+    enriched_events = extracted.events
+
     rounds = DEFAULT_MAX_ROUNDS if max_rounds is None else max_rounds
-    verification = verify_narrative(events, model, max_rounds=rounds) if model is not None else None
+    verification = (
+        verify_narrative(enriched_events, model, max_rounds=rounds) if model is not None else None
+    )
     resolved_label = None
     if model is not None:
         resolved_label = model_label if model_label is not None else "local model (offline)"
 
     report_path = write_report(
         out_dir / DEMO_REPORT_NAME,
-        events,
+        enriched_events,
         verification,
         scenario=scenario.ground_truth["scenario"],
         source_tool="hayabusa",
         model_label=resolved_label,
         provenance=normalized.provenance,
+        episodes=clustered.episodes,
+        iocs=extracted.iocs,
     )
 
     technique_count = len(
-        {tech.technique_id for event in events for tech in event.attack_techniques}
+        {tech.technique_id for event in enriched_events for tech in event.attack_techniques}
     )
     return DemoResult(
         report_path=report_path,
-        event_count=len(events),
+        event_count=len(enriched_events),
         problem_count=normalized.problem_count,
         technique_count=technique_count,
+        episode_count=len(clustered.episodes),
+        ioc_count=len(extracted.iocs),
         accepted_count=len(verification.accepted) if verification else 0,
         rejected_count=len(verification.audit) if verification else 0,
         no_model=model is None,
@@ -225,6 +242,10 @@ def demo(
     if result.problem_count:
         typer.echo(f"reported {result.problem_count} malformed row(s) without aborting")
     typer.echo(f"tagged {result.technique_count} distinct ATT&CK technique(s)")
+    typer.echo(
+        f"clustered {result.episode_count} activity episode(s) and "
+        f"extracted {result.ioc_count} indicator(s)"
+    )
     if result.no_model:
         typer.echo("no language model configured: wrote the deterministic report (no narrative)")
     else:

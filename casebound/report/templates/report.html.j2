@@ -59,6 +59,13 @@ a { color: var(--link); }
 .appendix dl { display: grid; grid-template-columns: 160px 1fr; gap: 2px 12px; margin: 0; }
 .appendix dt { color: var(--muted); font-size: 12.5px; }
 .appendix dd { margin: 0; font-size: 13px; word-break: break-word; }
+.chip.ep { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.chip.ioc { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.chip.iocty { text-transform: uppercase; letter-spacing: 0.04em; font-size: 10.5px; color: var(--muted); }
+.episode { border: 1px solid var(--line); border-left: 4px solid var(--link); border-radius: 0 8px 8px 0; padding: 12px 16px; margin: 12px 0; }
+.episode h3 { margin: 0 0 4px; font-size: 14px; }
+.episode .meta { color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
+.episode .members { font-size: 12.5px; }
 footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 14px; color: var(--muted); font-size: 12.5px; }
 </style>
 </head>
@@ -83,6 +90,8 @@ footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 14px;
   <div class="stat"><div class="n">{{ stats.techniques }}</div><div class="k">ATT&amp;CK techniques</div></div>
   <div class="stat"><div class="n">{{ stats.accepted }}</div><div class="k">Verified claims</div></div>
   <div class="stat"><div class="n">{{ stats.rejected }}</div><div class="k">Rejected claims</div></div>
+  <div class="stat"><div class="n">{{ stats.episodes }}</div><div class="k">Activity episodes</div></div>
+  <div class="stat"><div class="n">{{ stats.iocs }}</div><div class="k">Indicators</div></div>
 </div>
 
 {% if observed_techniques %}
@@ -169,6 +178,55 @@ footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 14px;
   </table>
 </section>
 
+<section id="episodes">
+  <h2>Activity episodes</h2>
+  <p class="lead">Events grouped into episodes by host, principal, and time proximity. Each
+  episode is one actor's coherent run of activity on one host; its id tags every member
+  event so the timeline can be read as a sequence of episodes.</p>
+  {% if episodes %}
+  {% for ep in episodes %}
+  <div class="episode">
+    <h3 class="mono">{{ ep.episode_id }}</h3>
+    <div class="meta">
+      Host: {{ ep.host if ep.host is not none else "unattributed" }}.
+      Principal: <span class="mono">{{ ep.principal if ep.principal is not none else "unattributed" }}</span>.
+      {{ ep.event_count }} event(s) from {{ ep.start }} to {{ ep.end }}.
+    </div>
+    <div class="members">Events:
+      {% for m in ep.members %}<a href="#event-{{ m.id }}" class="mono">{{ m.short }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <p class="empty">No episodes were formed.</p>
+  {% endif %}
+</section>
+
+<section id="iocs">
+  <h2>Indicators of compromise</h2>
+  <p class="lead">Indicators extracted from the events and defanged for safe handling: IPs and
+  domains have their dots bracketed, hashes and paths are listed verbatim. Each indicator links
+  to the events that reference it.</p>
+  {% if iocs %}
+  <table>
+    <thead>
+      <tr><th>Type</th><th>Indicator (defanged)</th><th>Events</th></tr>
+    </thead>
+    <tbody>
+      {% for ioc in iocs %}
+      <tr>
+        <td><span class="chip iocty">{{ ioc.ioc_type }}</span></td>
+        <td class="mono">{{ ioc.defanged }}</td>
+        <td>{% for e in ioc.events %}<a href="#event-{{ e.id }}" class="mono">{{ e.short }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No indicators were extracted.</p>
+  {% endif %}
+</section>
+
 <section id="appendix" class="appendix">
   <h2>Evidence appendix</h2>
   <p class="lead">The full canonical record for every event, with its source provenance for audit.
@@ -187,6 +245,12 @@ footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 14px;
       <dt>source</dt><dd>{{ ev.source_tool }} / {{ ev.source_artifact }}</dd>
       {% if ev.attack_techniques %}
       <dt>attack_techniques</dt><dd>{% for t in ev.attack_techniques %}<span class="chip tech">{{ t.technique_id }}</span> <span style="color:var(--muted);font-size:11.5px;">({{ t.mapping_source }})</span>{% if not loop.last %} {% endif %}{% endfor %}</dd>
+      {% endif %}
+      {% if ev.episode_id %}
+      <dt>episode</dt><dd><span class="chip ep">{{ ev.episode_id }}</span></dd>
+      {% endif %}
+      {% if ev.iocs %}
+      <dt>iocs</dt><dd>{% for i in ev.iocs %}<span class="chip ioc">{{ i.defanged }}</span> <span class="iocty">{{ i.type }}</span>{% if not loop.last %} {% endif %}{% endfor %}</dd>
       {% endif %}
       {% if ev.details %}
       <dt>details</dt><dd>{% for k, v in ev.details %}<div><span style="color:var(--muted);">{{ k }}:</span> <span class="mono">{{ v }}</span></div>{% endfor %}</dd>

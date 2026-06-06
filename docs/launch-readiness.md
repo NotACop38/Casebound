@@ -1,7 +1,9 @@
 # Launch readiness report: Casebound v0.1.0
 
 Date: 2026-06-06. Prepared as the Phase 10 release gate (see
-`docs/ENGINEERING_CHECKLIST.md`).
+`docs/ENGINEERING_CHECKLIST.md`). This is the final, independently reproduced
+validation: every check below was re-run from a clean clone of the release branch
+in a fresh container before the tag was applied, and every prior claim held.
 
 Style: no em dashes or en dashes anywhere. Use hyphens, colons, or commas.
 
@@ -10,10 +12,14 @@ Style: no em dashes or en dashes anywhere. Use hyphens, colons, or commas.
 Ready to tag v0.1.0. The full validation passes from a clean clone, the offline
 demo reproduces the metrics with no keys, the verification guarantee holds at a
 1.0 hallucination-rejection rate on the seeded set, and the built wheel installs
-into a fresh environment and runs the demo end to end. One packaging gap was found
-during the dry run and resolved. The only remaining items are manual repository
-cosmetics and the name-availability confirmation, which cannot be done from the
-CLI.
+into a fresh environment and runs the demo end to end. Two additional, stronger
+checks were added in this final pass: the demo runs to completion with the network
+namespace fully blocked (a kernel-level no-egress proof, not just a monkeypatch),
+and the "add a source in an afternoon" guide was followed end to end to add an
+illustrative adapter that passes the full gate. One packaging gap was found during
+the earlier dry run and resolved (see below); none recurred. The only remaining
+items are manual repository cosmetics and the name-availability confirmation, which
+cannot be done from the CLI.
 
 ## Validation performed
 
@@ -24,12 +30,14 @@ All commands were run with the pinned toolchain from `pyproject.toml`.
 | `make ci` (lint, format, mypy, pytest, schema, secrets, bandit, deps) | PASS. ruff and format clean, mypy clean on 70 files, 280 tests passed, schema and 2 examples validated, detect-secrets clean, bandit clean, pip-audit clean. |
 | `make security` (gate plus defensive-scope invariants) | PASS. 9 invariant tests passed. |
 | Clean-clone demo (fresh `git clone`, fresh venv, `pip install -e .`, `make demo`) | PASS, fully offline with all API-key env vars unset. All artifacts regenerated. |
+| Hard offline demo (network namespace blocked, `unshare -rn`) | PASS. The demo ran end to end with no network namespace at all and produced identical metrics, backing the no-egress invariant test with a kernel-level block. |
 | Claim-to-event linkage in the demo report | PASS. 11/11 accepted claims resolve to real, field-consistent events; 0 orphans; all 58 HTML citation links resolve to event anchors. |
 | Metrics | hallucination-rejection rate 1.0 (6/6 seeded fabrications rejected), citation accuracy 1.0 (11/11), ATT&CK precision 1.0, recall 1.0, coverage 12 techniques, targets met. |
 | Release dry run: `python -m build` | PASS. sdist and wheel built. |
 | Wheel install in a fresh venv, `casebound demo` from an empty directory | PASS. Entry point reports 0.1.0; demo runs end to end; rejection rate 1.0; targets met. |
 | Wheel contents inspection | CLEAN. Ships the `casebound` package plus the report template and license metadata only. No tests, fixtures, samples, `.env`, CSV, or secrets. |
 | sdist contents inspection | CLEAN of sensitive content. After the fix below, it is a coherent, self-testable source snapshot (280 tests pass from an unpacked sdist). |
+| Adapter authoring path (followed `docs/authoring.md` end to end on a throwaway clone) | PASS. The illustrative `acme_edr` source was added per the guide: adapter, mapper, registry entry, fixture, golden file, and golden test. The full gate is green after the standard `ruff format` an author runs. Confirms the Phase 10 exit criterion that a stranger can add a source and pass CI. |
 
 ## Definition of Done (whole project): evidence
 
@@ -59,7 +67,10 @@ From AGENTS.md, the whole-project bar, with evidence:
 
 No other gaps were found. The verifier, the offline guarantees, the defensive-scope
 invariants, the metrics, and the report linkage were already green from the prior
-phases.
+phases. The final re-validation from a clean clone of the release branch found no
+new gaps: the `MANIFEST.in` fix held (the sdist is still self-testable at 280
+tests), and the wheel still ships the package, the report template, and the license
+metadata only.
 
 ## Remaining items (manual-only, cannot be done from the CLI)
 

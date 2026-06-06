@@ -136,7 +136,6 @@ _SERVER = "WIN-FILE-02"
 _USER = "CORP\\jdoe"
 _SVC = "CORP\\svc-backup"
 _WS_IP = "10.4.12.66"
-_SRV_IP = "10.4.12.40"
 _C2_IP = "203.0.113.77"
 _C2_DOMAIN = "sync-update.example"
 _IMPLANT_PATH = "C:\\Users\\jdoe\\AppData\\Roaming\\Microsoft\\Windows\\updater.exe"
@@ -449,7 +448,12 @@ OFFICE_INTRUSION = Scenario(
     ),
     hosts=(_WORKSTATION, _SERVER),
     principals=(_USER, _SVC),
-    ip_iocs=(_WS_IP, _SRV_IP, _C2_IP),
+    # Every declared indicator must be recoverable from the evidence (the same
+    # principle the hash_iocs comment states). The file server is identified by its
+    # hostname, not by an IP that appears in any log line, so its address is not a
+    # declared IOC. test_declared_network_and_file_iocs_appear_in_evidence enforces
+    # this for ips, domains, and files.
+    ip_iocs=(_WS_IP, _C2_IP),
     domain_iocs=(_C2_DOMAIN,),
     file_iocs=(_IMPLANT_PATH, _SVC_BINARY, _ARCHIVE_PATH),
     # Only hashes that are actually emitted into a CSV row belong here, so an

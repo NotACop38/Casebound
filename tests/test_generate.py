@@ -161,6 +161,19 @@ def test_spliced_hash_appears_in_both_csv_and_iocs() -> None:
 # 3. Everything shipped is synthetic and safe (Hard rule 3).
 
 
+def test_declared_network_and_file_iocs_appear_in_evidence() -> None:
+    # Casebound's premise is that findings cannot outrun the evidence, so a declared
+    # ground-truth indicator must be recoverable from the evidence the pipeline sees.
+    # Every ip, domain, and file IOC the ground truth names must appear in the CSV
+    # (hashes are seed-derived and covered by test_spliced_hash_appears...).
+    result = generate()
+    csv_text = result.csv_text
+    iocs = result.ground_truth["iocs"]
+    for kind in ("ips", "domains", "files"):
+        for indicator in iocs[kind]:
+            assert indicator in csv_text, f"declared {kind} IOC {indicator!r} is not in evidence"
+
+
 def test_all_ip_iocs_are_private_or_documentation_only() -> None:
     gt = generate().ground_truth
     for raw in gt["iocs"]["ips"]:

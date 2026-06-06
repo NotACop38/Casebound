@@ -59,10 +59,10 @@ Exit criteria: episodes cluster sensibly on the scenario; all three report forma
 
 - [x] [A] Activity clustering into episodes by time, host, and principal (FR15).
 - [x] [A] IOC extraction and defanging into a structured set, surfaced in reports (FR16).
-- [ ] [A] JSON and Markdown report renderers (FR29, FR30).
-- [ ] [A] ATT&CK Navigator layer generation of observed techniques (FR31), with the layer committed for the scenario.
-- [ ] [A] Implement the metrics computation (PRD Section 12) and have the demo print and persist the numbers.
-- [ ] [A] Expand the synthetic generator to the full multi-stage scenario with complete technique labels.
+- [x] [A] JSON and Markdown report renderers (FR29, FR30).
+- [x] [A] ATT&CK Navigator layer generation of observed techniques (FR31), with the layer committed for the scenario.
+- [x] [A] Implement the metrics computation (PRD Section 12) and have the demo print and persist the numbers.
+- [x] [A] Expand the synthetic generator to the full multi-stage scenario with complete technique labels.
 
 ## Phase 5 - Cloud path and offline guarantees
 

@@ -43,6 +43,7 @@ OUTPUT_OFFSET_LABEL = "-04:00"
 REQUIRED_STAGES: frozenset[str] = frozenset(
     {
         "initial_access",
+        "command_and_control",
         "persistence",
         "credential_access",
         "lateral_movement",

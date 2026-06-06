@@ -38,15 +38,13 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from casebound.enrich.cluster import Episode, cluster_events
 from casebound.enrich.ioc import Ioc, IocSet, extract_iocs
 from casebound.normalize.schema import Event, RawRef
+from casebound.report.model import NO_MODEL_LABEL, verified_statement
 from casebound.verify.engine import VerificationResult, VerifiedClaim
 
 __all__ = ["NO_MODEL_LABEL", "render_report", "write_report"]
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 _TEMPLATE_NAME = "report.html.j2"
-
-# The narrative label shown when the deterministic no-model path is taken (FR26).
-NO_MODEL_LABEL = "none (deterministic report)"
 
 # How many leading hex characters of an event id to show as its short handle. The
 # full id is always the anchor and link target; this is only the visible label.
@@ -63,26 +61,6 @@ def _environment() -> Environment:
     )
 
 
-def _verified_statement(claim: VerifiedClaim) -> str:
-    """Render an accepted claim as a sentence built only from verified facts.
-
-    Uses solely the fields the verifier checked against the backing event, so the
-    statement can never contain a fact the verifier did not confirm. The model's
-    free prose is never surfaced as an accepted-claim statement; only the model
-    drafts that were rejected appear, in the audit, clearly marked as rejected.
-    """
-    asserts = claim.asserts
-    subject = asserts.principal if asserts.principal is not None else "An actor"
-    action = asserts.action if asserts.action is not None else "was involved in an event"
-
-    sentence = f"{subject} {action}".rstrip()
-    if asserts.object is not None:
-        sentence += f" on {asserts.object}"
-    if asserts.datetime is not None:
-        sentence += f" at {asserts.datetime}"
-    return sentence + "."
-
-
 def _claim_context(claim: VerifiedClaim) -> dict[str, Any]:
     """Build the template context for one accepted claim, with citation links.
 
@@ -95,7 +73,7 @@ def _claim_context(claim: VerifiedClaim) -> dict[str, Any]:
     backing = claim.backing_event_id
     context = [cid for cid in claim.citations if cid != backing]
     return {
-        "statement": _verified_statement(claim),
+        "statement": verified_statement(claim.asserts),
         "backing": {"id": backing, "short": backing[:_SHORT_ID_LEN]},
         "context_citations": [{"id": cid, "short": cid[:_SHORT_ID_LEN]} for cid in context],
     }

@@ -100,11 +100,14 @@ pip install -e .
 # run the offline demo on a bundled synthetic intrusion (no API keys required)
 casebound demo
 
-# the self-contained report is written to:
-#   out/report.html
+# the outputs are written to out/:
+#   report.html                 the self-contained hero report
+#   report.json, report.md      the same content, machine-readable and ticket-ready
+#   attack_navigator_layer.json a MITRE ATT&CK Navigator layer of observed techniques
+#   metrics.json                the headline numbers (see the Metrics table below)
 ```
 
-The demo ingests a synthetic, multi-stage intrusion with known ground truth, builds the timeline, tags ATT&CK, runs the verifier against a local or mocked model, and writes the report plus the metrics, all offline.
+The demo ingests a synthetic, multi-stage intrusion with known ground truth, builds the timeline, tags ATT&CK, runs the verifier against a local or mocked model, and writes the reports, the Navigator layer, and the metrics, all offline. It prints the metrics and asserts they hit their targets.
 
 ## Features
 

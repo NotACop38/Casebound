@@ -50,7 +50,7 @@ Exit criteria: each new adapter ships with a fixture and a normalization golden 
 - [x] [A] Generic CSV adapter with a documented column-mapping config (FR4).
 - [x] [A] Chainsaw adapter (FR5).
 - [x] [A] Velociraptor and Plaso timeline adapters (FR6).
-- [ ] [A] De-duplication across sources with provenance retained (FR12).
+- [x] [A] De-duplication across sources with provenance retained (FR12).
 
 ## Phase 4 - Enrichment and reporting depth
 

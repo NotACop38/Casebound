@@ -3,7 +3,7 @@
 
 PYTHON ?= python3
 
-.PHONY: install lint test demo ci security clean
+.PHONY: install lint test demo web ci security clean
 
 install:  ## Install the package and the pinned dev dependencies.
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -18,6 +18,9 @@ test:  ## pytest, all green, no network, no API keys.
 
 demo:  ## Run the full pipeline on the bundled synthetic scenario, offline.
 	$(PYTHON) -m casebound.cli demo
+
+web:  ## Serve the optional web UI on loopback (needs the 'web' extra installed).
+	$(PYTHON) -m web
 
 ci:  ## The gate: lint, test, schema validation, secret scan, bandit, and a dependency audit.
 	$(PYTHON) scripts/ci.py

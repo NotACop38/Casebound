@@ -105,14 +105,12 @@ def _episode_context(episode: Mapping[str, Any]) -> dict[str, Any]:
 
 def _ioc_context(ioc: Mapping[str, Any]) -> dict[str, Any]:
     """Build the template context for one extracted indicator (from the shared model)."""
-    # Ioc.to_dict omits the event_count property, so derive it from the ids.
-    event_ids = ioc["event_ids"]
     return {
         "ioc_id": ioc["ioc_id"],
         "ioc_type": ioc["ioc_type"],
         "defanged": ioc["defanged"],
-        "event_count": len(event_ids),
-        "events": [_handle(eid) for eid in event_ids],
+        "event_count": ioc["event_count"],
+        "events": [_handle(eid) for eid in ioc["event_ids"]],
     }
 
 

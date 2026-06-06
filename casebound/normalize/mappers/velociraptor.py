@@ -42,7 +42,6 @@ from casebound.normalize.mappers.winevent import (
     FALLBACK_ACTION,
     FALLBACK_CONFIDENCE,
     MAPPED_CONFIDENCE,
-    WinEventMapping,
     coerce_event_id,
     derive_object,
     derive_principal,
@@ -65,7 +64,6 @@ __all__ = [
     "VELOCIRAPTOR_KEY_MESSAGE",
     "VELOCIRAPTOR_KEY_TIMESTAMP",
     "VelociraptorMapper",
-    "WinEventMapping",
 ]
 
 # The keys the Velociraptor adapter writes the flattened row under. The scalar

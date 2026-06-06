@@ -43,7 +43,6 @@ from casebound.normalize.mappers.winevent import (
     FALLBACK_ACTION,
     FALLBACK_CONFIDENCE,
     MAPPED_CONFIDENCE,
-    WinEventMapping,
     coerce_event_id,
     derive_object,
     derive_principal,
@@ -67,7 +66,6 @@ __all__ = [
     "CHAINSAW_KEY_TAGS",
     "CHAINSAW_KEY_TIMESTAMP",
     "ChainsawMapper",
-    "WinEventMapping",
     "normalize_attack_tag",
 ]
 

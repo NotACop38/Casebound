@@ -47,7 +47,6 @@ from casebound.normalize.mappers.winevent import (
     FALLBACK_ACTION,
     FALLBACK_CONFIDENCE,
     MAPPED_CONFIDENCE,
-    WinEventMapping,
     coerce_event_id,
     derive_object,
     derive_principal,
@@ -61,7 +60,7 @@ if TYPE_CHECKING:
     # Annotation-only: keeps normalize free of a runtime dependency on ingest.
     from casebound.ingest.base import RawRecord
 
-__all__ = ["HayabusaMapper", "WinEventMapping", "parse_details"]
+__all__ = ["HayabusaMapper", "parse_details"]
 
 # Hayabusa's multi-value separator is a space-padded broken bar (U+00A6). Splitting
 # on the bar itself and stripping is robust to the exact spacing a profile uses.

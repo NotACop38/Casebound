@@ -69,10 +69,10 @@ Exit criteria: episodes cluster sensibly on the scenario; all three report forma
 Goal: make the optional cloud model safe, and prove the no-model path.
 Exit criteria: the pipeline produces a full deterministic report with no model configured; any cloud call is gated and redacted; keys never appear in output.
 
-- [ ] [A] Implement the provider-agnostic model interface (Anthropic, OpenAI, local), defaulting to local (R8, FR27).
-- [ ] [A] Implement the no-model path: skip narrative, still emit timeline, tags, episodes, and a deterministic findings summary (FR26). Add a test asserting a full report with no provider configured.
-- [ ] [D] Decide D5 redaction depth.
-- [ ] [A] Implement the redaction pass before any cloud call and a test that keys and redacted fields never appear in outputs (FR36, FR37).
+- [x] [A] Implement the provider-agnostic model interface (Anthropic, OpenAI, local), defaulting to local (R8, FR27).
+- [x] [A] Implement the no-model path: skip narrative, still emit timeline, tags, episodes, and a deterministic findings summary (FR26). Add a test asserting a full report with no provider configured.
+- [x] [D] Decide D5 redaction depth.
+- [x] [A] Implement the redaction pass before any cloud call and a test that keys and redacted fields never appear in outputs (FR36, FR37).
 
 ## Phase 6 - Security, invariants, and docs
 

@@ -12,6 +12,7 @@ TODO(Phase 3+): the granular subcommands (ingest, normalize, analyze, report) as
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -112,16 +113,24 @@ class DemoResult:
 
 
 def _configured_model() -> NarrativeModel | None:
-    """Return the configured local narrative model, or None when none is set.
+    """Return a configured local narrative model for the demo, or None (FR26, FR27).
 
-    The narrative defaults to a local model so evidence never leaves the host (R8,
-    FR27); a cloud provider is opt-in only and out of scope here. No local provider
-    is wired yet (that interface lands in Phase 5), so this returns None today and
-    the demo takes the deterministic no-model path (FR26). The seam exists so the
-    demo gains a verified narrative the moment a provider lands, with no change to
-    the orchestration below.
+    Provider selection lives in ``narrate.llm.build_model_from_env``; the narrative
+    defaults to a local model so evidence never leaves the host (R8, FR27). The
+    bundled demo is the offline showcase, so it deliberately uses only a local
+    provider a user has explicitly configured through ``CASEBOUND_PROVIDER``, and
+    never a cloud provider (that would send data off-host). With nothing configured
+    this returns None and the demo takes the deterministic no-model path or the
+    bundled offline narrator (FR26). No cloud call is ever made from the demo: cloud
+    use goes through ``build_model_from_env`` with an explicit consent flag.
     """
-    return None
+    from casebound.narrate.llm import LocalProvider, ProviderError, build_model_from_env
+
+    try:
+        model = build_model_from_env(os.environ, allow_cloud=False)
+    except ProviderError:
+        return None
+    return model if isinstance(model, LocalProvider) else None
 
 
 def run_demo(

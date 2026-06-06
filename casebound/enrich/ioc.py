@@ -63,6 +63,7 @@ __all__ = [
     "IocSet",
     "defang",
     "extract_iocs",
+    "find_indicators",
 ]
 
 IOC_TYPE_IP = "ip"
@@ -292,6 +293,18 @@ def _candidates_from_value(value: str) -> list[tuple[str, str]]:
             continue
         found.append((IOC_TYPE_DOMAIN, candidate))
     return found
+
+
+def find_indicators(value: str) -> list[tuple[str, str]]:
+    """Return the (ioc_type, value) indicators embedded in one string.
+
+    The same classification ``extract_iocs`` applies to a single source string,
+    exposed as a pure, stateless helper so other modules can locate the indicators
+    in a field without re-implementing the patterns. The cloud redaction pass uses
+    this to strip obvious indicators from an event view before any cloud call,
+    which keeps redaction in lockstep with the extractor (no drift).
+    """
+    return _candidates_from_value(value)
 
 
 def _iter_strings(value: object) -> Iterable[str]:

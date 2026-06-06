@@ -24,7 +24,9 @@ ci:  ## The gate: lint, test, schema validation, secret scan, bandit, and a depe
 
 security:  ## The gate (which includes the secret scan, bandit, and pip-audit) plus the defensive-scope invariants.
 	$(PYTHON) scripts/ci.py
-	@echo "security: defensive-scope invariant tests land in Phase 6 (see ENGINEERING CHECKLIST.md)."
+	@echo ""
+	@echo "==> defensive-scope invariants (PRD Section 6)"
+	$(PYTHON) -m pytest -m invariant
 
 clean:  ## Remove caches and build artifacts.
 	rm -rf build dist *.egg-info .pytest_cache .mypy_cache .ruff_cache out

@@ -85,6 +85,23 @@ def _format_utc(moment: datetime) -> str:
     return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _distinct(actual: str | None, *candidates: str) -> str:
+    """Return a value guaranteed to differ from ``actual`` under the verifier's check.
+
+    The verifier compares text fields after trimming and case-folding, so a seeded
+    fabrication is only guaranteed false if its asserted value differs under that
+    same comparison. This returns the first candidate that does; if every candidate
+    happens to equal the event's real value (so the fabrication would otherwise turn
+    into a true claim), it mutates one into a sentinel that cannot match. That keeps
+    the fabrication false no matter what a future scenario records.
+    """
+    norm = (actual or "").strip().casefold()
+    for candidate in candidates:
+        if candidate.strip().casefold() != norm:
+            return candidate
+    return f"{candidates[0]}-impostor" if candidates else "impostor"
+
+
 def build_seeded_fabrications(events: Sequence[Event]) -> list[Claim]:
     """Build the seeded set of fabricated claims for the hallucination metric.
 
@@ -141,13 +158,16 @@ def build_seeded_fabrications(events: Sequence[Event]) -> list[Claim]:
     add((), (_MALFORMED_CITATION,), ClaimAssertion(action="process_create"))
 
     if powershell is not None:
-        # Misattribution to the domain administrator: principal_mismatch.
+        # Misattribution to another principal: principal_mismatch. The replacement is
+        # chosen to differ from the event's real principal, so the fabrication can
+        # never accidentally become a true claim (for example on a future scenario
+        # where the PowerShell event really is run by CORP\Administrator).
         add(
             (powershell.event_id,),
             (),
             ClaimAssertion(
                 datetime=powershell.datetime,
-                principal="CORP\\Administrator",
+                principal=_distinct(powershell.principal, "CORP\\Administrator", "CORP\\Imposter"),
                 action="process_create",
             ),
         )
@@ -170,7 +190,9 @@ def build_seeded_fabrications(events: Sequence[Event]) -> list[Claim]:
             ),
         )
     if network_logon is not None:
-        # The right event pointed at the wrong source host: object_mismatch.
+        # The right event pointed at the wrong source host: object_mismatch. The
+        # replacement endpoint is chosen to differ from the event's real object, so
+        # the fabrication stays false on any scenario.
         add(
             (network_logon.event_id,),
             (),
@@ -178,7 +200,7 @@ def build_seeded_fabrications(events: Sequence[Event]) -> list[Claim]:
                 datetime=network_logon.datetime,
                 principal=network_logon.principal,
                 action="logon",
-                object="10.9.9.9",
+                object=_distinct(network_logon.object, "10.9.9.9", "10.0.0.254"),
             ),
         )
 

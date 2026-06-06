@@ -50,8 +50,9 @@ __all__ = [
 # older layer versions too; 4.5 is a stable, widely supported revision.
 LAYER_VERSION = "4.5"
 
-# The cell color for an observed technique. A single warm hue keeps the heatmap
-# readable; the per-technique score (event count) drives the gradient intensity.
+# The hot end of the heatmap gradient. Cells are colored by the Navigator from each
+# technique's score (its event count) along the white-to-this-hue gradient; no
+# per-technique color is set, so the score is what drives the intensity.
 OBSERVED_COLOR = "#fd8d3c"
 
 # The catalog of ATT&CK techniques Casebound knows how to emit, mapping each id to
@@ -123,7 +124,6 @@ def build_navigator_layer(events: Sequence[Event], *, scenario: str) -> dict[str
         {
             "techniqueID": tid,
             "score": counts[tid],
-            "color": OBSERVED_COLOR,
             "comment": ATTACK_TECHNIQUES[tid],
             "enabled": True,
         }
@@ -133,8 +133,11 @@ def build_navigator_layer(events: Sequence[Event], *, scenario: str) -> dict[str
 
     return {
         "name": f"Casebound: {scenario}",
+        # The ATT&CK content version is deliberately omitted so the layer loads
+        # against whatever ATT&CK version the Navigator instance carries, rather than
+        # pinning a number that goes stale as ATT&CK revises (AGENTS.md: do not trust
+        # memory for external specifics, re-verify at author time).
         "versions": {
-            "attack": "16",
             "navigator": "5.1.0",
             "layer": LAYER_VERSION,
         },
@@ -146,15 +149,15 @@ def build_navigator_layer(events: Sequence[Event], *, scenario: str) -> dict[str
         ),
         "sorting": 0,
         "hideDisabled": False,
+        # No per-technique color: a fixed color would override the score-derived
+        # gradient in the Navigator, so every cell would read the same regardless of
+        # its event count. The score plus the gradient below drive the heatmap.
         "techniques": techniques,
         "gradient": {
             "colors": ["#ffffff", OBSERVED_COLOR],
             "minValue": 0,
             "maxValue": max_score,
         },
-        "legendItems": [
-            {"label": "Observed in this case", "color": OBSERVED_COLOR},
-        ],
         "showTacticRowBackground": False,
         "tacticRowBackground": "#dddddd",
         "selectTechniquesAcrossTactics": True,

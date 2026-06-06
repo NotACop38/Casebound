@@ -109,6 +109,24 @@ def test_demo_command_prints_the_metrics(tmp_path: Path) -> None:
     assert "targets met: yes" in result.output
 
 
+def test_demo_command_fails_when_a_metric_misses_its_target(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    # The demo is a reproducibility check: a metric below target must fail the run
+    # (non-zero exit), not be written out silently. Force a miss and assert that.
+    from casebound.metrics import Metrics
+
+    monkeypatch.setattr(Metrics, "meets_targets", lambda self: False)
+    out_dir = tmp_path / "out"
+    runner = CliRunner()
+    result = runner.invoke(app, ["demo", "--out-dir", str(out_dir)])
+
+    assert result.exit_code == 1
+    assert "targets met: no" in result.output
+    # The outputs are still written for debugging even though the run failed.
+    assert (out_dir / DEMO_METRICS_NAME).exists()
+
+
 def test_demo_without_model_writes_deterministic_report(tmp_path: Path) -> None:
     result = run_demo(tmp_path, model=None)
 

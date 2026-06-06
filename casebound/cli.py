@@ -336,6 +336,13 @@ def demo(
     typer.echo(f"wrote {result.layer_path}")
     typer.echo(f"wrote {result.metrics_path}")
 
+    # The demo is a reproducibility check: if any headline metric falls below its
+    # PRD Section 12 target, fail loudly rather than writing the outputs and exiting
+    # 0, so a regressed verifier or tagger cannot be reproduced as a green run.
+    if not metrics.meets_targets():
+        typer.echo("error: one or more metrics fell below target (see above)", err=True)
+        raise typer.Exit(code=1)
+
 
 if __name__ == "__main__":
     app()

@@ -77,6 +77,23 @@ def test_layer_scores_observed_techniques(tmp_path: Path) -> None:
         assert is_known_technique(tech["techniqueID"])
 
 
+def test_layer_drives_heatmap_by_score_not_manual_color(tmp_path: Path) -> None:
+    # A per-technique color would override the score-derived gradient in the
+    # Navigator, so every cell would read identically. The layer must omit it and
+    # let the score plus the gradient drive the heatmap.
+    events = _events(tmp_path)
+    layer = build_navigator_layer(events, scenario="office_intrusion")
+
+    assert "gradient" in layer
+    for tech in layer["techniques"]:
+        assert "color" not in tech
+        assert "score" in tech
+    # The ATT&CK content version is omitted so the layer loads against the
+    # Navigator's current ATT&CK matrix rather than a pinned, staleable number.
+    assert "attack" not in layer["versions"]
+    assert layer["versions"]["layer"]
+
+
 def test_unknown_technique_id_is_rejected(tmp_path: Path) -> None:
     events = _events(tmp_path)
     # Tamper one event with a well-formed but non-catalog id; the layer must refuse.

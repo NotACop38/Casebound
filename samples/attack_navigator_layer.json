@@ -1,7 +1,6 @@
 {
   "name": "Casebound: office_intrusion",
   "versions": {
-    "attack": "16",
     "navigator": "5.1.0",
     "layer": "4.5"
   },
@@ -13,84 +12,72 @@
     {
       "techniqueID": "T1003.001",
       "score": 1,
-      "color": "#fd8d3c",
       "comment": "OS Credential Dumping: LSASS Memory",
       "enabled": true
     },
     {
       "techniqueID": "T1021.002",
       "score": 1,
-      "color": "#fd8d3c",
       "comment": "Remote Services: SMB/Windows Admin Shares",
       "enabled": true
     },
     {
       "techniqueID": "T1041",
       "score": 1,
-      "color": "#fd8d3c",
       "comment": "Exfiltration Over C2 Channel",
       "enabled": true
     },
     {
       "techniqueID": "T1053.005",
       "score": 1,
-      "color": "#fd8d3c",
       "comment": "Scheduled Task/Job: Scheduled Task",
       "enabled": true
     },
     {
       "techniqueID": "T1059.001",
       "score": 1,
-      "color": "#fd8d3c",
       "comment": "Command and Scripting Interpreter: PowerShell",
       "enabled": true
     },
     {
       "techniqueID": "T1071.001",
       "score": 1,
-      "color": "#fd8d3c",
       "comment": "Application Layer Protocol: Web Protocols",
       "enabled": true
     },
     {
       "techniqueID": "T1078.002",
       "score": 1,
-      "color": "#fd8d3c",
       "comment": "Valid Accounts: Domain Accounts",
       "enabled": true
     },
     {
       "techniqueID": "T1105",
       "score": 1,
-      "color": "#fd8d3c",
       "comment": "Ingress Tool Transfer",
       "enabled": true
     },
     {
       "techniqueID": "T1543.003",
       "score": 1,
-      "color": "#fd8d3c",
       "comment": "Create or Modify System Process: Windows Service",
       "enabled": true
     },
     {
       "techniqueID": "T1547.001",
       "score": 1,
-      "color": "#fd8d3c",
       "comment": "Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder",
       "enabled": true
     },
     {
       "techniqueID": "T1560.001",
       "score": 1,
-      "color": "#fd8d3c",
       "comment": "Archive Collected Data: Archive via Utility",
       "enabled": true
     },
     {
       "techniqueID": "T1566.001",
       "score": 1,
-      "color": "#fd8d3c",
       "comment": "Phishing: Spearphishing Attachment",
       "enabled": true
     }
@@ -103,12 +90,6 @@
     "minValue": 0,
     "maxValue": 1
   },
-  "legendItems": [
-    {
-      "label": "Observed in this case",
-      "color": "#fd8d3c"
-    }
-  ],
   "showTacticRowBackground": false,
   "tacticRowBackground": "#dddddd",
   "selectTechniquesAcrossTactics": true,

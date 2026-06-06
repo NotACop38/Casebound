@@ -85,6 +85,32 @@ def test_seeded_fabrications_cover_every_rejection_reason(tmp_path: Path) -> Non
     }
 
 
+def test_fabrications_stay_false_when_the_event_matches_the_default_replacement() -> None:
+    # The principal_mismatch fabrication must differ from the event's real principal
+    # even when that principal happens to equal the default replacement, so it can
+    # never turn into a true claim the verifier accepts.
+    powershell = Event(
+        datetime="2026-03-14T08:42:17Z",
+        timestamp_raw="2026-03-14 04:42:17.000 -04:00",
+        source_timezone="America/New_York",
+        timestamp_desc="logged",
+        message="encoded PowerShell",
+        action="process_create",
+        source_tool="hayabusa",
+        source_artifact="Security.evtx",
+        raw_ref=RawRef(source_file="f.csv", record="R1"),
+        host="WIN-ACCT-07",
+        # The event is actually run by the principal the default fabrication uses.
+        principal="CORP\\Administrator",
+        object="C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    )
+    rate, rejected, total = hallucination_rejection_rate(
+        [powershell], build_seeded_fabrications([powershell])
+    )
+    assert rate == 1.0
+    assert rejected == total
+
+
 def test_hallucination_rejection_rate_is_one(tmp_path: Path) -> None:
     events, _ = _scenario(tmp_path)
     rate, rejected, total = hallucination_rejection_rate(events, build_seeded_fabrications(events))

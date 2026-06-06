@@ -155,6 +155,20 @@ def test_markdown_defangs_network_indicators(tmp_path: Path) -> None:
     assert "203.0.113.77" not in iocs
 
 
+def test_markdown_appendix_includes_event_details(tmp_path: Path) -> None:
+    # Parity with the HTML appendix: the ticket-ready Markdown must carry the
+    # source-specific detail fields (the Hayabusa command line, destination fields,
+    # and so on) so an analyst can audit an event without opening the HTML or JSON.
+    events = _events(tmp_path)
+    md = render_markdown_report(events, None, scenario="office_intrusion")
+    appendix = md.split("## Evidence appendix", 1)[1]
+
+    assert "- details:" in appendix
+    # The nested Hayabusa fields block and a concrete field value are both present.
+    assert "- fields:" in appendix
+    assert "CommandLine" in appendix
+
+
 def test_no_model_path_renders_deterministic_reports_and_says_so(tmp_path: Path) -> None:
     events = _events(tmp_path)
     body = json.loads(render_json_report(events, None, scenario="office_intrusion"))

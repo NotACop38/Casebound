@@ -59,6 +59,39 @@ def _mono(value: Any) -> str:
     return f"`{_cell(value)}`"
 
 
+def _inline(value: Any) -> str:
+    """Render a scalar detail value as a safe inline code span.
+
+    Any backtick in the value is replaced so it cannot break out of the code span,
+    so hostile or odd evidence text stays inert in the Markdown.
+    """
+    text = "" if value is None else str(value)
+    if text == "":
+        return "(empty)"
+    return f"`{text.replace('`', chr(39))}`"
+
+
+def _detail_lines(key: str, value: Any, indent: str) -> list[str]:
+    """Render one details entry as a nested Markdown bullet, recursing into mappings.
+
+    A mapping (the Hayabusa ``fields`` block, say) becomes a nested bullet list, a
+    list renders inline, and a scalar renders as an inline code span. This carries
+    the same source specifics the HTML appendix shows, for ticket-only audit.
+    """
+    if isinstance(value, dict):
+        if not value:
+            return [f"{indent}- {key}: (none)"]
+        out = [f"{indent}- {key}:"]
+        for sub_key, sub_value in value.items():
+            out.extend(_detail_lines(str(sub_key), sub_value, indent + "  "))
+        return out
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return [f"{indent}- {key}: (none)"]
+        return [f"{indent}- {key}: " + ", ".join(_inline(item) for item in value)]
+    return [f"{indent}- {key}: {_inline(value)}"]
+
+
 def _render(model: ReportModel) -> str:
     """Render the shared report model to a Markdown document."""
     lines: list[str] = []
@@ -262,6 +295,10 @@ def _render(model: ReportModel) -> str:
                 f"`{ioc['defanged']}` ({ioc['type']})" for ioc in event["referenced_iocs"]
             )
             lines.append(f"- iocs: {iocs}")
+        if event["details"]:
+            lines.append("- details:")
+            for key, value in event["details"].items():
+                lines.extend(_detail_lines(str(key), value, "  "))
         if event["provenance"]:
             provenance = ", ".join(f"`{ref}`" for ref in event["provenance"])
             lines.append(f"- provenance: {provenance}")

@@ -183,7 +183,7 @@ class GenericCsvAdapter(IngestAdapter):
         Rows are yielded in file order. The ``raw_ref.record`` is the configured
         record-id column when present and otherwise the 1-based source line number.
         """
-        with source.open("r", encoding="utf-8", newline="") as handle:
+        with source.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
             for line_number, row in enumerate(reader, start=2):
                 yield self._to_record(source, line_number, coerce_row(row))

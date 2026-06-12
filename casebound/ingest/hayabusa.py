@@ -76,7 +76,7 @@ class HayabusaAdapter(IngestAdapter):
         handle) and otherwise the 1-based source line number, so every record is
         traceable even when a row lacks a RecordID.
         """
-        with source.open("r", encoding="utf-8", newline="") as handle:
+        with source.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
             # csv counts the header as line 1, so the first data row is line 2.
             for line_number, row in enumerate(reader, start=2):

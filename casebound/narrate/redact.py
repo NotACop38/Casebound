@@ -67,6 +67,9 @@ class RedactionConfig:
     username, and obvious indicators in ``object``. ``strip_host`` is off by default
     (a hostname is not in the D5 strip list) but available for stricter setups.
     Every toggle is configurable, so an operator can widen or narrow the pass.
+    ``strip_iocs`` and ``strip_principal`` govern their content class inside every
+    kept text field: a kept message still has indicators and usernames blanked
+    unless those toggles are off too.
     """
 
     strip_message: bool = True
@@ -142,6 +145,20 @@ def redact_view(view: EventView, config: RedactionConfig) -> dict[str, Any]:
         if config.strip_principal:
             obj = _strip_username(obj, view.principal, config.placeholder)
 
+    # The IOC and username toggles govern their content class in every kept text
+    # field: an operator who keeps the message (strip_message off) still gets
+    # indicators and usernames blanked inside it unless those toggles are off
+    # too. The host is exempt from IOC stripping: an FQDN hostname would match
+    # the domain pattern, and keeping or stripping the host is its own toggle.
+    message: str | None = view.message
+    if config.strip_message:
+        message = _redact_field(message, True, config.placeholder)
+    else:
+        if config.strip_iocs and message:
+            message = _strip_indicators(message, config.placeholder)
+        if config.strip_principal and message:
+            message = _strip_username(message, view.principal, config.placeholder)
+
     return {
         "event_id": view.event_id,
         "datetime": view.datetime,
@@ -149,5 +166,5 @@ def redact_view(view: EventView, config: RedactionConfig) -> dict[str, Any]:
         "principal": _redact_field(view.principal, config.strip_principal, config.placeholder),
         "action": view.action,
         "object": obj,
-        "message": _redact_field(view.message, config.strip_message, config.placeholder),
+        "message": message,
     }

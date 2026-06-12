@@ -679,3 +679,23 @@ def test_accepted_claim_renders_the_events_canonical_fields(tmp_path: Path) -> N
     assert target.datetime in report_claim.statement
     assert offset_time not in report_claim.statement
     assert report_claim.asserts["principal"] == target.principal
+
+
+def test_claim_with_no_citation_at_all_is_rejected(tmp_path: Path) -> None:
+    # A claim that cites nothing (not even a malformed string) provides no
+    # support and is rejected before any field is checked (FR18).
+    events = _events(tmp_path)
+    model = StubModel(
+        [
+            _response(
+                {
+                    "text": "An encoded PowerShell process was spawned from Word.",
+                    "citations": [],
+                    "asserts": {"action": "process_create"},
+                }
+            )
+        ]
+    )
+    result = verify_narrative(events, model, max_rounds=0)
+    assert result.accepted == ()
+    assert result.dropped[0].reason is RejectionReason.NO_CITATIONS

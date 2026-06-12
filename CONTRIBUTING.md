@@ -50,7 +50,7 @@ merge.
 Casebound targets Python 3.11 or newer.
 
 ```bash
-git clone https://github.com/NotACop38/casebound.git
+git clone https://github.com/NotACop38/Casebound.git
 cd casebound
 python -m venv .venv && source .venv/bin/activate
 make install          # editable install plus the pinned dev toolchain

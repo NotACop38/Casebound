@@ -217,7 +217,10 @@ audit, which ships with every report so the rejections are transparent.
   trap (FR35, `samples/hallucination_trap.json`) seeds deliberately fabricated
   claims (a nonexistent event, a wrong time, a wrong principal, a wrong action, a
   wrong object, a malformed citation) and the test asserts the verifier rejects
-  every one. That fixture is the seed set behind the headline number.
+  every one. The headline number the demo prints is computed from a
+  programmatically seeded set covering the same fabrication classes
+  (`build_seeded_fabrications` in `casebound/metrics.py`); the committed fixture
+  pins the identical behavior in the test suite.
 - The model is fenced: it only ever sees the compact, id-addressed view, it must
   commit to machine-checkable assertions, and it never has the authority to state
   a fact the deterministic layer has not confirmed.

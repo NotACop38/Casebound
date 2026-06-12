@@ -1,6 +1,6 @@
 # Casebound - Product Requirements Document
 
-> Status: Draft v0.1 - Type: Source of truth - Last updated: 2026-06-05
+> Status: Draft v0.1 - Type: Source of truth - Last updated: 2026-06-12
 > This document and ENGINEERING_CHECKLIST.md are the canonical reference for Casebound. Update them when a decision changes; do not let code drift from them silently.
 > Name: “Casebound”. A casebound book is a finished, sewn hardcover, which connotes an authoritative case file, and the name states the wedge: the narrative is bound to the case evidence and cannot exceed it. Confirm GitHub and PyPI availability before you register it. Fallbacks if taken: Cairn, Probative.
 
@@ -66,7 +66,7 @@ Explicitly out of scope for MVP (candidates for later phases):
 
 - Python 3.11+. The DFIR parsing ecosystem is Python-native and the language-model SDKs are first-class; this also keeps contributor accessibility high. (Sextant used Rust for byte-level parsing performance; here the heavy parsing is delegated to existing tools and libraries, so Python is the right call.)
 - Language-model interface: provider-agnostic behind a thin abstraction. Anthropic and OpenAI as first-class interchangeable providers; a local provider (Ollama or an OpenAI-compatible local endpoint) is the documented default. Mirrors Sextant’s posture.
-- Timeline store: SQLite for portability and zero-server operation in the MVP. Document an export path to OpenSearch and Timesketch for teams.
+- Timeline store: in-memory for the MVP. The pipeline is a pure batch run (ingest to report in one pass), so no persistent store proved necessary; SQLite remains the candidate if persistence is needed later. Document an export path to OpenSearch and Timesketch for teams (planned, not yet shipped).
 - CLI: Typer or Click plus rich, consistent with Phishbowl.
 - Reporting: Jinja2 with a single self-contained HTML template (no external asset fetches at view time), consistent with Phishbowl.
 - Raw mode (later): Dissect for artifact and image parsing. Note D2: Dissect is AGPL-3.0; keep it isolated to the optional Raw-mode path to preserve license flexibility for the core.
@@ -83,7 +83,7 @@ A single Python package with clear module boundaries, each independently testabl
 - narrate: the provider interface, prompt templates, and the loop that calls the model and submits rejected claims for revision.
 - report: HTML, JSON, and Markdown renderers; ATT&CK Navigator layer generation; the evidence appendix.
 - generate: the synthetic evidence generator and the ground-truth scenario definitions.
-- cli: the command surface (ingest, normalize, analyze, report, demo, generate).
+- cli: the command surface (report, demo, generate, version). The shipped `report` command covers the sketched ingest, normalize, and analyze plumbing in one step (evidence in, verified report out); granular plumbing subcommands can still land if a real workflow needs the intermediates.
 - web (stretch, see D4): a minimal FastAPI app and timeline viewer reusing the report layer unchanged.
 
 ## 9. Functional requirements
@@ -203,7 +203,7 @@ casebound/
   normalize/         schema.py, timezone.py, mappers/
   enrich/            attack.py, cluster.py, ioc.py
   verify/            engine.py, claims.py, checks.py
-  narrate/           llm.py, loop.py, prompts/
+  narrate/           llm.py, demo.py, redact.py (the loop lives in verify/engine.py, the prompt in llm.py)
   report/            html.py, json_report.py, markdown.py, attack_layer.py, templates/
   generate/          synth.py, scenarios/
   cli.py

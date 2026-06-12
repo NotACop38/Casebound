@@ -613,3 +613,69 @@ def test_rejection_details_never_quote_event_field_values(tmp_path: Path) -> Non
     )
     assert grounded.ok is True
     assert grounded.backing_event_id == PROCESS_CREATE_ID
+
+
+def test_accepted_claim_renders_the_events_canonical_fields(tmp_path: Path) -> None:
+    # The checks are tolerant (case folding, a small time window), so a model can
+    # assert an equivalent but differently-spelled value: a different case, or the
+    # same instant in a non-UTC offset. The claim is rightly accepted, but the
+    # report must show the event's canonical values, never the model's spelling.
+    events = _events(tmp_path)
+    index = {event.event_id: event for event in events}
+    target = index[PROCESS_CREATE_ID]
+    assert target.principal is not None and target.object is not None
+
+    offset_time = "2026-03-14T09:42:17+01:00"  # the same instant as the event, +01:00
+    model = StubModel(
+        [
+            _response(
+                {
+                    "text": "The user ran PowerShell.",
+                    "citations": [PROCESS_CREATE_ID],
+                    "asserts": {
+                        "datetime": offset_time,
+                        "principal": target.principal.upper(),
+                        "action": target.action.upper(),
+                        "object": target.object.lower(),
+                    },
+                },
+                {
+                    # The fabricated counterpart: a principal beyond the tolerance
+                    # of any spelling difference is still rejected.
+                    "text": "The domain administrator ran PowerShell.",
+                    "citations": [PROCESS_CREATE_ID],
+                    "asserts": {"principal": "CORP\\Administrator"},
+                },
+            )
+        ]
+    )
+    result = verify_narrative(events, model, max_rounds=0)
+
+    [claim] = result.accepted
+    assert result.dropped[0].reason is RejectionReason.PRINCIPAL_MISMATCH
+
+    # The verified snapshot carries the canonical values; the model's spellings
+    # stay in asserts for the audit.
+    assert claim.verified.datetime == target.datetime
+    assert claim.verified.principal == target.principal
+    assert claim.verified.object == target.object
+    assert claim.asserts.datetime == offset_time
+
+    statement = claim.rendered_statement()
+    assert target.datetime in statement
+    assert target.principal in statement
+    assert target.object in statement
+    assert offset_time not in statement
+    assert target.principal.upper() not in statement
+    assert target.object.lower() not in statement
+
+    # Every report format renders through the shared model, which uses the same
+    # canonical snapshot.
+    from casebound.report.model import build_report_model
+
+    report = build_report_model(events, result, scenario="canonical-render-test")
+    [report_claim] = report.accepted
+    assert target.principal in report_claim.statement
+    assert target.datetime in report_claim.statement
+    assert offset_time not in report_claim.statement
+    assert report_claim.asserts["principal"] == target.principal

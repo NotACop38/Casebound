@@ -48,12 +48,14 @@ NO_MODEL_LABEL = "none (deterministic report)"
 def verified_statement(asserts: ClaimAssertion) -> str:
     """Render an accepted claim as a sentence built only from verified facts.
 
-    Uses solely the fields the verifier checked against the backing event, so the
-    statement can never contain a fact the verifier did not confirm. The model's
-    free prose is never surfaced as an accepted-claim statement; only the model
-    drafts that were rejected appear, in the audit, clearly marked as rejected. Every
-    report format renders accepted claims through this one function so they read
-    identically (AGENTS.md prime directive).
+    Callers pass the claim's ``verified`` assertion: the backing event's canonical
+    values for the asserted fields, never the model's spellings, so the statement
+    can never contain a fact the verifier did not confirm nor a model-chosen
+    presentation of one it did. The model's free prose is never surfaced as an
+    accepted-claim statement; only the model drafts that were rejected appear, in
+    the audit, clearly marked as rejected. Every report format renders accepted
+    claims through this one function so they read identically (AGENTS.md prime
+    directive).
     """
     subject = asserts.principal if asserts.principal is not None else "An actor"
     action = asserts.action if asserts.action is not None else "was involved in an event"
@@ -95,13 +97,18 @@ class ReportClaim:
 
 
 def _report_claim(claim: VerifiedClaim) -> ReportClaim:
-    """Build the renderer-agnostic view of one accepted claim."""
+    """Build the renderer-agnostic view of one accepted claim.
+
+    Both the statement and the ``asserts`` it surfaces are the backing event's
+    canonical values (``claim.verified``); the model's asserted spellings stay in
+    the verify-layer output for the audit trail.
+    """
     backing = claim.backing_event_id
     context = tuple(cid for cid in claim.citations if cid != backing)
     return ReportClaim(
-        statement=verified_statement(claim.asserts),
+        statement=verified_statement(claim.verified),
         backing_event_id=backing,
-        asserts=claim.asserts.to_dict(),
+        asserts=claim.verified.to_dict(),
         citations=tuple(claim.citations),
         context_citations=context,
     )

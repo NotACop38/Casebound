@@ -53,6 +53,11 @@ raw = [
 # deliberately NOT core: a default install pulls in no web framework and the
 # offline deterministic core is unchanged. The viewer reuses the report layer
 # unchanged and serves on loopback only; it never fetches or opens anything.
+# Note: this extra installs the server dependencies only. The viewer package
+# itself (web/) ships in the repository and the sdist, not the wheel, so the
+# web UI runs from a source tree (the documented 'pip install -e ".[web]"' plus
+# 'make web' flow), keeping the generic top-level 'web' name out of installed
+# site-packages.
 web = [
     "fastapi==0.136.3",
     "uvicorn==0.49.0",

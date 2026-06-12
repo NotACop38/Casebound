@@ -22,8 +22,17 @@ graft samples
 # an unpacked sdist.
 graft tests
 
+# The optional web viewer. It is not part of the wheel (only casebound* packages
+# are), but the sdist must carry it: tests/test_web.py imports it whenever the
+# dev extra's fastapi is installed, so without it an unpacked sdist's 'make ci'
+# goes red, and 'make web' from a source tree needs the package present.
+graft web
+
 # The offline CI gate, so 'make ci' works from an unpacked sdist.
 graft scripts
+
+# The documented environment template the README and docs reference.
+include .env.example
 
 # Never ship caches, compiled artifacts, or build output.
 global-exclude *.py[cod]

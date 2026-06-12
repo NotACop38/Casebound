@@ -292,3 +292,63 @@ def test_markdown_neutralizes_hostile_evidence_content(tmp_path: Path) -> None:
     # hostile principal and object render with backticks replaced.
     assert "evil'whoami'" in markdown
     assert "a\\|b'c.exe" in markdown
+
+
+def test_markdown_audit_and_appendix_neutralize_remaining_injection_points(
+    tmp_path: Path,
+) -> None:
+    # The audit's "Cited:" line renders malformed citations (arbitrary
+    # model-authored strings), and the appendix "- iocs:" line renders verbatim
+    # path indicators; both must use the breakout-proof span. A bare http URL in
+    # evidence prose must be defanged, since GFM autolinks it even fully escaped.
+    from casebound.normalize import RawRef
+    from casebound.report.markdown import render_markdown_report
+    from casebound.verify import verify_narrative
+
+    hostile = Event(
+        datetime="2026-03-14T09:00:17Z",
+        timestamp_raw="2026-03-14T09:00:17Z",
+        source_timezone="UTC",
+        timestamp_desc="logged",
+        message="stager pulled from http://evil.example/payload",
+        action="process_create",
+        source_tool="hayabusa",
+        source_artifact="Security.evtx",
+        raw_ref=RawRef(source_file="x.csv", record="1"),
+        host="HOST-1",
+        principal="CORP\\jdoe",
+        object="C:\\tools\\a`b.exe",
+    )
+
+    hostile_citation = "x`\n# injected heading\n<script>alert(1)</script>y"
+
+    class InjectionModel:
+        def draft(self, request: object) -> str:
+            return json.dumps(
+                {
+                    "claims": [
+                        {
+                            "text": "A fabricated claim with a hostile citation.",
+                            "citations": [hostile_citation],
+                            "asserts": {"action": "process_create"},
+                        }
+                    ]
+                }
+            )
+
+    verification = verify_narrative([hostile], InjectionModel(), max_rounds=0)
+    assert verification.accepted == ()
+
+    markdown = render_markdown_report([hostile], verification, scenario="audit-injection")
+
+    # The malformed citation cannot inject structure: the newline collapsed and
+    # the interior backtick was replaced, so the whole string stays inside one
+    # code span, where angle brackets are literal text in a compliant renderer.
+    assert "\n# injected heading" not in markdown
+    assert "`x' # injected heading" in markdown
+    # The appendix ioc line renders the backticked path inside a safe span.
+    assert "a'b.exe" in markdown
+    assert "a`b.exe" not in markdown
+    # The bare URL is defanged, never autolinkable.
+    assert "hxxp://evil.example/payload" in markdown
+    assert "http://evil.example" not in markdown

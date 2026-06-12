@@ -20,11 +20,11 @@ from pathlib import Path
 from typing import Any
 
 from casebound.cli import (
-    DEMO_JSON_NAME,
-    DEMO_LAYER_NAME,
-    DEMO_MARKDOWN_NAME,
-    DEMO_METRICS_NAME,
-    DEMO_REPORT_NAME,
+    METRICS_NAME,
+    NAVIGATOR_LAYER_NAME,
+    REPORT_HTML_NAME,
+    REPORT_JSON_NAME,
+    REPORT_MARKDOWN_NAME,
     app,
     run_demo,
 )
@@ -66,7 +66,7 @@ def test_demo_with_model_produces_a_verified_narrative(tmp_path: Path) -> None:
     assert result.accepted_count == 1
     assert result.rejected_count == 0
 
-    assert result.report_path == tmp_path / DEMO_REPORT_NAME
+    assert result.report_path == tmp_path / REPORT_HTML_NAME
     html = result.report_path.read_text(encoding="utf-8")
     assert "<!DOCTYPE html>" in html
     assert "<script" not in html
@@ -81,11 +81,11 @@ def test_demo_writes_all_outputs_and_metrics_hit_targets(tmp_path: Path) -> None
     result = run_demo(tmp_path, model=StubModel())
 
     for name in (
-        DEMO_REPORT_NAME,
-        DEMO_JSON_NAME,
-        DEMO_MARKDOWN_NAME,
-        DEMO_LAYER_NAME,
-        DEMO_METRICS_NAME,
+        REPORT_HTML_NAME,
+        REPORT_JSON_NAME,
+        REPORT_MARKDOWN_NAME,
+        NAVIGATOR_LAYER_NAME,
+        METRICS_NAME,
     ):
         assert (tmp_path / name).exists(), f"{name} was not written"
 
@@ -124,7 +124,7 @@ def test_demo_command_fails_when_a_metric_misses_its_target(
     assert result.exit_code == 1
     assert "targets met: no" in result.output
     # The outputs are still written for debugging even though the run failed.
-    assert (out_dir / DEMO_METRICS_NAME).exists()
+    assert (out_dir / METRICS_NAME).exists()
 
 
 def test_demo_without_model_writes_deterministic_report(tmp_path: Path) -> None:
@@ -170,7 +170,7 @@ def test_demo_command_default_uses_offline_narrator(tmp_path: Path) -> None:
     result = runner.invoke(app, ["demo", "--out-dir", str(out_dir)])
 
     assert result.exit_code == 0, result.output
-    report = out_dir / DEMO_REPORT_NAME
+    report = out_dir / REPORT_HTML_NAME
     assert report.exists()
     # The default path drafts with the bundled offline narrator and runs the verifier.
     assert "offline demo narrator" in result.output.lower()
@@ -188,7 +188,7 @@ def test_demo_command_no_model_flag_is_deterministic(tmp_path: Path) -> None:
     result = runner.invoke(app, ["demo", "--out-dir", str(out_dir), "--no-model"])
 
     assert result.exit_code == 0, result.output
-    report = out_dir / DEMO_REPORT_NAME
+    report = out_dir / REPORT_HTML_NAME
     assert report.exists()
     assert "no language model configured: wrote the deterministic report" in result.output
     # No narrative was produced on the no-model path (FR26).

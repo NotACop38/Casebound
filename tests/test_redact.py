@@ -96,3 +96,27 @@ def test_redact_view_does_not_mutate_the_input() -> None:
     # The frozen view is unchanged: redaction returns a new dict.
     assert view.principal == "CORP\\jdoe"
     assert view.message == "CORP\\jdoe beaconed out to 10.10.10.5"
+
+
+def test_kept_message_still_strips_indicators_and_usernames() -> None:
+    # The IOC and username toggles govern their content class in every kept text
+    # field: an operator who keeps the message must not silently keep the
+    # indicators and usernames inside it.
+    from casebound.narrate.redact import RedactionConfig, redact_view
+    from casebound.verify.engine import EventView
+
+    view = EventView(
+        event_id="c" * 64,
+        datetime="2026-03-14T08:42:17Z",
+        host="WIN-ACCT-07",
+        principal="CORP\\jdoe",
+        action="network_connect",
+        object=None,
+        message="CORP\\jdoe beaconed out to 10.10.10.5",
+    )
+    payload = redact_view(view, RedactionConfig(strip_message=False))
+
+    message = payload["message"]
+    assert "jdoe" not in message
+    assert "10.10.10.5" not in message
+    assert "beaconed out to" in message

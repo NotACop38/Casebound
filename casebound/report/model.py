@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from casebound.enrich.cluster import Episode, cluster_events
@@ -45,15 +46,22 @@ __all__ = [
 NO_MODEL_LABEL = "none (deterministic report)"
 
 
+def _parse_instant(value: str) -> datetime:
+    """Parse a canonical UTC datetime string (trailing Z) into an aware instant."""
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 def verified_statement(asserts: ClaimAssertion) -> str:
     """Render an accepted claim as a sentence built only from verified facts.
 
-    Uses solely the fields the verifier checked against the backing event, so the
-    statement can never contain a fact the verifier did not confirm. The model's
-    free prose is never surfaced as an accepted-claim statement; only the model
-    drafts that were rejected appear, in the audit, clearly marked as rejected. Every
-    report format renders accepted claims through this one function so they read
-    identically (AGENTS.md prime directive).
+    Callers pass the claim's ``verified`` assertion: the backing event's canonical
+    values for the asserted fields, never the model's spellings, so the statement
+    can never contain a fact the verifier did not confirm nor a model-chosen
+    presentation of one it did. The model's free prose is never surfaced as an
+    accepted-claim statement; only the model drafts that were rejected appear, in
+    the audit, clearly marked as rejected. Every report format renders accepted
+    claims through this one function so they read identically (AGENTS.md prime
+    directive).
     """
     subject = asserts.principal if asserts.principal is not None else "An actor"
     action = asserts.action if asserts.action is not None else "was involved in an event"
@@ -95,13 +103,18 @@ class ReportClaim:
 
 
 def _report_claim(claim: VerifiedClaim) -> ReportClaim:
-    """Build the renderer-agnostic view of one accepted claim."""
+    """Build the renderer-agnostic view of one accepted claim.
+
+    Both the statement and the ``asserts`` it surfaces are the backing event's
+    canonical values (``claim.verified``); the model's asserted spellings stay in
+    the verify-layer output for the audit trail.
+    """
     backing = claim.backing_event_id
     context = tuple(cid for cid in claim.citations if cid != backing)
     return ReportClaim(
-        statement=verified_statement(claim.asserts),
+        statement=verified_statement(claim.verified),
         backing_event_id=backing,
-        asserts=claim.asserts.to_dict(),
+        asserts=claim.verified.to_dict(),
         citations=tuple(claim.citations),
         context_citations=context,
     )
@@ -190,7 +203,10 @@ def build_report_model(
     whether or not the caller pre-computed them. Pass ``verification`` as None for
     the deterministic no-model path (FR26).
     """
-    ordered = sorted(events, key=lambda e: (e.datetime, e.event_id))
+    # Sort on the parsed instant, not the string: the canonical form trims
+    # trailing zeros, so "...17.5Z" sorts before "...17Z" lexicographically while
+    # being chronologically later.
+    ordered = sorted(events, key=lambda e: (_parse_instant(e.datetime), e.event_id))
     prov = provenance or {}
 
     resolved_episodes = list(episodes) if episodes is not None else cluster_events(ordered).episodes

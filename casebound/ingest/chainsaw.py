@@ -64,7 +64,7 @@ class ChainsawAdapter(IngestAdapter):
         The file is expected to be a JSON array of detection objects, as
         ``chainsaw hunt ... --json`` produces. A non-array document yields nothing.
         """
-        document = json.loads(source.read_text(encoding="utf-8"))
+        document = json.loads(source.read_text(encoding="utf-8-sig"))
         if not isinstance(document, list):
             return
         for index, detection in enumerate(document, start=1):

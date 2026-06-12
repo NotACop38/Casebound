@@ -88,7 +88,9 @@ class Claim:
     ``citations`` holds the well-formed event ids in first-seen order with
     duplicates removed. ``malformed_citations`` holds the raw strings that were not
     valid event ids, kept for the audit log. ``index`` is the claim's position in
-    the narrative the model returned. ``revises`` is the id of the outstanding
+    the parsed claim list (textless entries are skipped during parsing, so it is
+    not necessarily the position in the raw model output). ``revises`` is the id
+    of the outstanding
     claim this one replaces during a revision round (see ``docs/verification.md``),
     or None for a fresh claim; it is how the engine matches a revision to the claim
     it fixes without relying on ordering.

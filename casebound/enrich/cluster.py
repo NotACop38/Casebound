@@ -257,12 +257,17 @@ def cluster_events(
 
     episodes: list[Episode] = []
     for group in groups.values():
-        ordered = sorted(group, key=lambda e: (e.datetime, e.event_id))
+        # Sort on the parsed instant, not the string: the canonical form trims
+        # trailing zeros, so "...17.5Z" sorts before "...17Z" lexicographically
+        # while being chronologically later.
+        ordered = sorted(group, key=lambda e: (_parse_utc(e.datetime), e.event_id))
         episodes.extend(_split_into_episodes(ordered, max_gap_seconds))
 
     # Chronological order, with host and principal as stable tie-breakers so the
     # episode order is fully determined.
-    episodes.sort(key=lambda ep: (ep.start, ep.host or "", ep.principal or "", ep.episode_id))
+    episodes.sort(
+        key=lambda ep: (_parse_utc(ep.start), ep.host or "", ep.principal or "", ep.episode_id)
+    )
 
     tag_for_event: dict[str, str] = {}
     for episode in episodes:

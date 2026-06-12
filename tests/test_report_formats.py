@@ -225,3 +225,130 @@ def test_writers_round_trip_to_disk(tmp_path: Path) -> None:
     )
     payload: dict[str, Any] = json.loads(json_path.read_text(encoding="utf-8"))
     assert payload["scenario"] == "office_intrusion"
+
+
+def test_report_timeline_orders_subsecond_events_chronologically(tmp_path: Path) -> None:
+    # The shared report model sorts on the parsed instant: the canonical form
+    # trims trailing zeros, so a plain string sort would put "...17.5Z" before
+    # "...17Z" while it is half a second later.
+    from casebound.normalize import RawRef
+    from casebound.report.model import build_report_model
+
+    def _stamped(stamp: str, record: str) -> Event:
+        return Event(
+            datetime=stamp,
+            timestamp_raw=stamp,
+            source_timezone="UTC",
+            timestamp_desc="logged",
+            message=f"event at {stamp}",
+            action="process_create",
+            source_tool="hayabusa",
+            source_artifact="Security.evtx",
+            raw_ref=RawRef(source_file="x.csv", record=record),
+            host="HOST-1",
+        )
+
+    whole = _stamped("2026-03-14T09:00:17Z", "1")
+    fractional = _stamped("2026-03-14T09:00:17.5Z", "2")
+
+    model = build_report_model([fractional, whole], None, scenario="subsecond-order")
+    assert [entry["event_id"] for entry in model.events] == [
+        whole.event_id,
+        fractional.event_id,
+    ]
+
+
+def test_markdown_neutralizes_hostile_evidence_content(tmp_path: Path) -> None:
+    # Evidence fields are attacker-controlled: a crafted message, principal, or
+    # object must not be able to inject raw HTML, a javascript: link, a code-span
+    # breakout, or new document structure into the ticket-ready Markdown.
+    from casebound.normalize import RawRef
+    from casebound.report.markdown import render_markdown_report
+
+    hostile = Event(
+        datetime="2026-03-14T09:00:17Z",
+        timestamp_raw="2026-03-14T09:00:17Z",
+        source_timezone="UTC",
+        timestamp_desc="logged",
+        message="<script>alert(1)</script> [click me](javascript:alert(1))\n# fake heading",
+        action="process_create",
+        source_tool="hayabusa",
+        source_artifact="Security.evtx",
+        raw_ref=RawRef(source_file="x.csv", record="1"),
+        host="HOST-1",
+        principal="CORP\\evil`whoami`",
+        object="C:\\tools\\a|b`c.exe",
+        details={"Cmd`Line": "run `this` | that"},
+    )
+
+    markdown = render_markdown_report([hostile], None, scenario="hostile<&>case")
+
+    # Raw HTML and the javascript: link are escaped, not emitted.
+    assert "<script>" not in markdown
+    assert "[click me](javascript:" not in markdown
+    # The embedded newline cannot start a new heading line.
+    assert "\n# fake heading" not in markdown
+    # No code span in the document carries an interior backtick or raw pipe; the
+    # hostile principal and object render with backticks replaced.
+    assert "evil'whoami'" in markdown
+    assert "a\\|b'c.exe" in markdown
+
+
+def test_markdown_audit_and_appendix_neutralize_remaining_injection_points(
+    tmp_path: Path,
+) -> None:
+    # The audit's "Cited:" line renders malformed citations (arbitrary
+    # model-authored strings), and the appendix "- iocs:" line renders verbatim
+    # path indicators; both must use the breakout-proof span. A bare http URL in
+    # evidence prose must be defanged, since GFM autolinks it even fully escaped.
+    from casebound.normalize import RawRef
+    from casebound.report.markdown import render_markdown_report
+    from casebound.verify import verify_narrative
+
+    hostile = Event(
+        datetime="2026-03-14T09:00:17Z",
+        timestamp_raw="2026-03-14T09:00:17Z",
+        source_timezone="UTC",
+        timestamp_desc="logged",
+        message="stager pulled from http://evil.example/payload",
+        action="process_create",
+        source_tool="hayabusa",
+        source_artifact="Security.evtx",
+        raw_ref=RawRef(source_file="x.csv", record="1"),
+        host="HOST-1",
+        principal="CORP\\jdoe",
+        object="C:\\tools\\a`b.exe",
+    )
+
+    hostile_citation = "x`\n# injected heading\n<script>alert(1)</script>y"
+
+    class InjectionModel:
+        def draft(self, request: object) -> str:
+            return json.dumps(
+                {
+                    "claims": [
+                        {
+                            "text": "A fabricated claim with a hostile citation.",
+                            "citations": [hostile_citation],
+                            "asserts": {"action": "process_create"},
+                        }
+                    ]
+                }
+            )
+
+    verification = verify_narrative([hostile], InjectionModel(), max_rounds=0)
+    assert verification.accepted == ()
+
+    markdown = render_markdown_report([hostile], verification, scenario="audit-injection")
+
+    # The malformed citation cannot inject structure: the newline collapsed and
+    # the interior backtick was replaced, so the whole string stays inside one
+    # code span, where angle brackets are literal text in a compliant renderer.
+    assert "\n# injected heading" not in markdown
+    assert "`x' # injected heading" in markdown
+    # The appendix ioc line renders the backticked path inside a safe span.
+    assert "a'b.exe" in markdown
+    assert "a`b.exe" not in markdown
+    # The bare URL is defanged, never autolinkable.
+    assert "hxxp://evil.example/payload" in markdown
+    assert "http://evil.example" not in markdown

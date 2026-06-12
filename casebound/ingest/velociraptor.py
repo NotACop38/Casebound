@@ -50,7 +50,7 @@ class VelociraptorAdapter(IngestAdapter):
 
     def read(self, source: Path) -> Iterator[RawRecord]:
         """Yield one ``RawRecord`` per non-blank JSONL line at ``source``."""
-        with source.open("r", encoding="utf-8") as handle:
+        with source.open("r", encoding="utf-8-sig") as handle:
             for line_number, line in enumerate(handle, start=1):
                 stripped = line.strip()
                 if not stripped:

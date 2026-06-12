@@ -149,7 +149,7 @@ Every rejected claim is recorded with one of these reasons (FR22, FR25):
 | Reason | Meaning |
 | --- | --- |
 | `no_citations` | The claim carried no citation at all. |
-| `malformed_citation` | The claim's only citations were not valid event ids. |
+| `malformed_citation` | The claim carried a citation that was not a valid event id (any malformed citation rejects the whole claim, even alongside valid ones). |
 | `missing_id` | No cited id resolves to a real event in the store. |
 | `no_assertions` | The claim asserted none of the four checkable facts. |
 | `time_mismatch` | The asserted time is outside tolerance of the cited event. |
@@ -163,11 +163,16 @@ The model's free `text` is a drafting aid, not the report's source of truth.
 Nothing stops a model from stating a fact in prose that it never put in `asserts`
 (for example, naming the domain administrator in `text` while asserting only
 `action`), and the verifier cannot deterministically check arbitrary prose. So the
-prose is never emitted as fact. An accepted claim carries the verified `asserts`
-and its backing event, and the report renders the claim from those checked fields
-only. The model's original prose is preserved alongside the claim as a
-non-authoritative draft for the audit trail, but it is never rendered as a factual
-statement. This is the fence made literal: the model proposes wording, but only
+prose is never emitted as fact. An accepted claim carries both the model's
+`asserts` and a `verified` snapshot: the backing event's canonical values for
+exactly the asserted fields. The report renders the claim from the canonical
+snapshot, never from the model's spellings. The distinction matters because the
+checks are deliberately tolerant (case folding, a small time window), so within
+that equivalence class the model could otherwise pick the presentation: a
+confusable look-alike path, a non-UTC offset, a different case. The model's
+original prose and asserted spellings are preserved alongside the claim for the
+audit trail, but neither is rendered as a factual statement. This is the fence
+made literal: the model proposes wording, but only the event's own values for
 fields the verifier confirmed reach the reader as facts (AGENTS.md prime
 directive). The practical consequence: every fact a model wants in the report must
 be in `asserts`, where it is checked, or it does not appear.
@@ -212,7 +217,10 @@ audit, which ships with every report so the rejections are transparent.
   trap (FR35, `samples/hallucination_trap.json`) seeds deliberately fabricated
   claims (a nonexistent event, a wrong time, a wrong principal, a wrong action, a
   wrong object, a malformed citation) and the test asserts the verifier rejects
-  every one. That fixture is the seed set behind the headline number.
+  every one. The headline number the demo prints is computed from a
+  programmatically seeded set covering the same fabrication classes
+  (`build_seeded_fabrications` in `casebound/metrics.py`); the committed fixture
+  pins the identical behavior in the test suite.
 - The model is fenced: it only ever sees the compact, id-addressed view, it must
   commit to machine-checkable assertions, and it never has the authority to state
   a fact the deterministic layer has not confirmed.

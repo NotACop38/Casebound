@@ -145,6 +145,24 @@ def test_unparseable_timestamp_raises(bad: str) -> None:
         normalize_timestamp(bad)
 
 
+@pytest.mark.parametrize("partial", ["08:42:17", "4624", "March", "03-14 08:42:17"])
+def test_partial_timestamp_is_rejected_not_filled_from_today(partial: str) -> None:
+    # dateutil would silently complete a partial timestamp from the current date,
+    # fabricating an instant and making the content-derived event ids differ
+    # between runs. A string that does not pin its own date must be reported as
+    # malformed (FR7), never completed.
+    with pytest.raises(TimestampError, match="complete date"):
+        normalize_timestamp(partial)
+
+
+def test_date_only_timestamp_resolves_to_midnight_deterministically() -> None:
+    # A date without a time pins its own date, so it resolves the same way on
+    # every run: midnight, with the UTC assumption flagged.
+    stamp = normalize_timestamp("2026-03-14")
+    assert stamp.datetime_utc == "2026-03-14T00:00:00Z"
+    assert stamp.source_timezone == "assumed_utc"
+
+
 def test_unknown_assume_timezone_raises() -> None:
     with pytest.raises(TimestampError):
         normalize_timestamp("2026-03-14 04:30:05", assume_timezone="Mars/Olympus")
@@ -177,6 +195,54 @@ def test_identical_events_dedupe_and_keep_all_provenance() -> None:
     refs = result.provenance[event.event_id]
     assert {ref.record for ref in refs} == {"80038", "99999"}
     assert result.duplicate_count == 1
+
+
+_DEDUP_HEADER = (
+    '"Timestamp","Computer","Channel","EventID","Level",'
+    '"MitreTactics","MitreTags","RecordID","RuleTitle","Details"'
+)
+_DEDUP_ROW_UNTAGGED = (
+    '"2026-03-14 04:42:17.000 -04:00","WIN-ACCT-07","Security","4688","high",'
+    '"","","80038","Suspicious Process Lineage",'
+    '"NewProcessName: C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe '
+    '¦ SubjectUserName: jdoe ¦ SubjectDomainName: CORP"'
+)
+_DEDUP_ROW_TAGGED = (
+    '"2026-03-14 04:42:17.000 -04:00","WIN-ACCT-07","Security","4688","high",'
+    '"Execution","T1059.001","80038","Office Application Spawned PowerShell",'
+    '"NewProcessName: C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe '
+    '¦ SubjectUserName: jdoe ¦ SubjectDomainName: CORP"'
+)
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        pytest.param([_DEDUP_ROW_UNTAGGED, _DEDUP_ROW_TAGGED], id="untagged-first"),
+        pytest.param([_DEDUP_ROW_TAGGED, _DEDUP_ROW_UNTAGGED], id="tagged-first"),
+    ],
+)
+def test_dedup_merges_rule_tags_from_collapsing_detections(rows: list[str], tmp_path: Path) -> None:
+    # Detection tools emit one row per rule match, so two rules firing on the same
+    # underlying record collapse to one event (FR12). The collapse must merge the
+    # detections' ATT&CK rule tags and titles: which row arrives first is an
+    # artifact of the export, and a technique mapping must never depend on it.
+    from casebound.enrich.attack import tag_events
+
+    csv_path = tmp_path / "double_detection.csv"
+    csv_path.write_text("\n".join([_DEDUP_HEADER, *rows]) + "\n", encoding="utf-8")
+    result = normalize_records(HayabusaAdapter().read(csv_path))
+
+    assert result.event_count == 1
+    assert result.duplicate_count == 1
+    [event] = result.events
+    assert event.details["rule_mitre_tags"] == ["T1059.001"]
+    titles = {event.details["rule_title"], *event.details.get("additional_rule_titles", [])}
+    assert titles == {"Suspicious Process Lineage", "Office Application Spawned PowerShell"}
+
+    # The merged tag is promoted by the deterministic tagger, whatever the order.
+    [tagged] = tag_events(result.events)
+    assert "T1059.001" in {tech.technique_id for tech in tagged.attack_techniques}
 
 
 # 4. Robustness: malformed reported, uncovered event id still mapped (FR7, FR8).
@@ -252,16 +318,26 @@ def test_channel_to_artifact(channel: str, artifact: str) -> None:
 
 def test_adapter_prefers_evtx_file_for_artifact(tmp_path: Path) -> None:
     # When a row carries Hayabusa's EvtxFile column, it is the exact source file and
-    # is preferred over the channel-derived name for provenance (FR11).
+    # is preferred over the channel-derived name for provenance (FR11). Only the
+    # base name is kept, matching the Chainsaw adapter: source_artifact is an
+    # identity field, so the same event exported from collections mounted at
+    # different paths must still collapse in cross-source dedup (FR12).
     csv_text = (
         '"Timestamp","Computer","Channel","EventID","EvtxFile","Details"\n'
         '"2026-03-14 04:42:17.000 -04:00","WIN-ACCT-07","Security","4688",'
         '"D:\\evidence\\host-a-Security.evtx","NewProcessName: C:\\Windows\\x.exe"\n'
+        '"2026-03-14 04:42:17.000 -04:00","WIN-ACCT-07","Security","4688",'
+        '"E:\\other-mount\\host-a-Security.evtx","NewProcessName: C:\\Windows\\x.exe"\n'
     )
     path = tmp_path / "with_evtx.csv"
     path.write_text(csv_text, encoding="utf-8")
     records = list(HayabusaAdapter().read(path))
-    assert records[0].source_artifact == "D:\\evidence\\host-a-Security.evtx"
+    assert records[0].source_artifact == "host-a-Security.evtx"
+
+    # The same record collected under two mount points collapses to one event.
+    result = normalize_records(iter(records))
+    assert result.event_count == 1
+    assert result.duplicate_count == 1
 
 
 def test_adapter_falls_back_to_channel_when_no_evtx_file() -> None:

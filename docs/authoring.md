@@ -119,7 +119,9 @@ class AcmeEdrAdapter(IngestAdapter):
     source_tool: ClassVar[str] = "acme_edr"
 
     def read(self, source: Path) -> Iterator[RawRecord]:
-        with source.open(encoding="utf-8") as handle:
+        # utf-8-sig consumes a leading BOM (PowerShell, Excel, and Notepad all
+        # write one) and reads plain UTF-8 unchanged; every adapter does this.
+        with source.open(encoding="utf-8-sig") as handle:
             for index, line in enumerate(handle, start=1):
                 line = line.strip()
                 if not line:

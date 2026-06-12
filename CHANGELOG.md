@@ -8,7 +8,57 @@ Style: no em dashes or en dashes anywhere. Use hyphens, colons, or commas.
 
 ## [Unreleased]
 
-Nothing yet.
+Everything below landed after the 0.1.0 notes were written and is not part of a
+tagged release yet.
+
+### Added
+
+- `casebound report`: run the full pipeline on your own evidence file with
+  `--source` selecting the adapter (hayabusa, eztools, chainsaw, velociraptor,
+  plaso, or generic_csv with `--column-map`). Deterministic with no model;
+  local-first narrative; cloud only behind the explicit `--allow-cloud` consent.
+- Raw-artifact mode (Phase 8): EVTX and NTFS $MFT parsed directly via Dissect,
+  license-gated behind the opt-in `raw` extra and isolated in
+  `casebound/ingest/raw` so the core stays Apache-2.0 (decision D2).
+- The optional web viewer (Phase 9): a loopback-only FastAPI timeline and report
+  browser behind the opt-in `web` extra, reusing the report layer unchanged.
+- Dark mode and responsive tables in the HTML report.
+- An eager `--version` flag, and clean CLI errors for unreadable evidence files
+  and output paths blocked by an existing file.
+
+### Fixed
+
+- Verification: rejection details no longer quote the cited event's own field
+  values, so a cloud revision round can no longer leak what the redaction pass
+  stripped (FR36, Hard rule 2).
+- Verification: an accepted claim now renders from the backing event's canonical
+  fields; the model's asserted spelling (a different case, a non-UTC offset, a
+  confusable look-alike) stays in the audit trail and never reaches the reader
+  as the verified statement.
+- Normalization: a partial timestamp (time-only, month name, stray number) is
+  rejected as malformed instead of being silently completed from the current
+  date, which fabricated instants and made event ids differ between runs.
+- Normalization: when detection rows collapse in dedup (one row per rule match),
+  the kept event now merges the other detections' ATT&CK rule tags and titles
+  instead of discarding them based on input order.
+- Ingestion: a UTF-8 BOM (PowerShell Export-Csv, Excel, Notepad) no longer
+  corrupts any adapter; a malformed JSONL line is skipped, not fatal.
+- Enrichment: the domain scan is bounded per token, removing quadratic
+  backtracking on hostile input (shared by the cloud redaction pass); document
+  file names (docx, pdf, json, ...) are no longer promoted to domain indicators;
+  sub-second events order chronologically instead of lexicographically.
+- Reports: the Markdown renderer neutralizes hostile evidence content (raw HTML,
+  javascript: links, code-span breakouts, structure-breaking newlines); the HTML
+  report blanks null fields instead of rendering "None".
+- Web viewer: uploads are gated on their headers (cross-site POSTs refused, a
+  declared in-cap Content-Length required) before the multipart body is parsed,
+  so the size cap actually bounds ingress.
+
+### Changed
+
+- Packaging: the sdist ships the web viewer package and `.env.example`, so an
+  unpacked sdist is self-testable again; the CI workflow actions are pinned to
+  commit SHAs.
 
 ## [0.1.0] - 2026-06-06
 

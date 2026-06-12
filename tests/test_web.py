@@ -220,3 +220,72 @@ def test_network_guard_blocks_real_connections(no_outbound_sockets: None) -> Non
     # Prove the guard has teeth, so the no-call result above is meaningful.
     with pytest.raises(_NetworkAccessError):
         socket.create_connection(("203.0.113.1", 9))
+
+
+# 6. Upload ingress gates: the header checks run before the body is parsed.
+
+
+def test_cross_site_upload_is_refused() -> None:
+    # A hostile page in the operator's browser can send a form POST at the
+    # loopback server without CORS (CORS only gates reading the response). Fetch
+    # metadata identifies it and the gate refuses it before any parsing.
+    client = _client()
+    files = {"file": ("timeline.csv", _sample_csv(), "text/csv")}
+    resp = client.post("/upload", files=files, headers={"sec-fetch-site": "cross-site"})
+    assert resp.status_code == 403
+
+
+def test_cross_origin_upload_is_refused_by_origin_header() -> None:
+    client = _client()
+    files = {"file": ("timeline.csv", _sample_csv(), "text/csv")}
+    resp = client.post("/upload", files=files, headers={"origin": "http://evil.example"})
+    assert resp.status_code == 403
+
+
+def test_same_origin_upload_passes_the_gates() -> None:
+    client = _client()
+    files = {"file": ("timeline.csv", _sample_csv(), "text/csv")}
+    resp = client.post(
+        "/upload",
+        files=files,
+        headers={"sec-fetch-site": "same-origin", "origin": "http://testserver"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+
+def test_upload_without_content_length_is_refused() -> None:
+    # A chunked request declares no Content-Length, so the size gate cannot hold
+    # the parser to a bound; it is refused before the body is read.
+    client = _client()
+    body = (
+        b"--boundary\r\n"
+        b'Content-Disposition: form-data; name="file"; filename="timeline.csv"\r\n'
+        b"Content-Type: text/csv\r\n\r\n"
+        b"Timestamp\r\n"
+        b"--boundary--\r\n"
+    )
+    resp = client.post(
+        "/upload",
+        content=iter([body]),  # an iterator body is sent chunked, with no length
+        headers={"content-type": "multipart/form-data; boundary=boundary"},
+    )
+    assert resp.status_code == 411
+
+
+def test_oversized_declared_length_is_refused_before_parsing() -> None:
+    # The declared Content-Length alone trips the gate: the file part here is
+    # well under the per-file cap (the old post-parse check would have accepted
+    # it), but the total declared body is over the cap plus framing overhead, so
+    # only the pre-parse header gate can produce this 413.
+    client = _client(max_upload_bytes=1024)
+    files = {"file": ("timeline.csv", _sample_csv(), "text/csv")}
+    filler = {"note": "x" * (1024 * 1024)}
+    resp = client.post("/upload", files=files, data=filler)
+    assert resp.status_code == 413
+
+
+def test_upload_without_a_file_field_is_a_clean_400() -> None:
+    client = _client()
+    resp = client.post("/upload", data={"note": "no file here"})
+    assert resp.status_code == 400

@@ -71,7 +71,7 @@ class EZToolsAdapter(IngestAdapter):
         yields nothing, so an empty-timestamp record never becomes a malformed
         event downstream.
         """
-        with source.open("r", encoding="utf-8", newline="") as handle:
+        with source.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
             for line_number, row in enumerate(reader, start=2):
                 yield from self._expand_row(source, line_number, row)

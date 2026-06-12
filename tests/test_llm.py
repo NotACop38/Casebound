@@ -279,3 +279,57 @@ def test_no_provider_configured_produces_complete_report(tmp_path: Path) -> None
     assert data["no_model"] is True
     assert len(data["events"]) == result.event_count
     assert data["narrative"]["accepted"] == []
+
+
+# --- Revision rounds on the cloud path stay redacted ------------------------------
+
+
+def test_cloud_revision_round_payload_stays_redacted(tmp_path: Path) -> None:
+    # Regression: a rejection detail used to quote the cited event's real field
+    # values, and the engine feeds details into the revision prompt, so a cloud
+    # provider received evidence the redaction pass had stripped (FR36, Hard
+    # rule 2). Drive a cloud provider through a real revision round and assert
+    # the stripped principal never appears in any cloud-bound payload.
+    from casebound.generate.synth import write_samples
+    from casebound.ingest import HayabusaAdapter
+    from casebound.normalize import normalize_records
+    from casebound.verify import verify_narrative
+
+    csv_path, _ = write_samples(tmp_path)
+    events = list(normalize_records(HayabusaAdapter().read(csv_path)).events)
+    target = next(
+        event
+        for event in events
+        if event.action == "process_create"
+        and event.principal is not None
+        and "jdoe" in event.principal
+    )
+
+    # The model misattributes a real event to the administrator every round, so
+    # the claim is rejected on round 0 and again on the revision round.
+    bad_claim = json.dumps(
+        {
+            "claims": [
+                {
+                    "text": "The domain administrator launched the payload.",
+                    "citations": [target.event_id],
+                    "asserts": {"principal": "CORP\\Administrator", "action": "process_create"},
+                }
+            ]
+        }
+    )
+    client = FakeAnthropicClient(text=bad_claim)
+    provider = AnthropicProvider(api_key=OPAQUE, client=client)
+
+    result = verify_narrative(events, provider, max_rounds=1)
+
+    # The fence held: the misattribution was never accepted.
+    assert result.accepted == ()
+
+    # The recorded call is the revision round (the rejected claim was resubmitted
+    # with its rejection detail), and nothing in that payload carries the
+    # principal the redaction pass stripped.
+    sent = json.dumps(client.calls["kwargs"])
+    assert "Revise these rejected claims" in sent
+    assert "Administrator" in sent  # the model's own asserted value, safe to echo
+    assert "jdoe" not in sent  # the event's real principal, stripped by redaction

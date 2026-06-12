@@ -96,8 +96,8 @@ The model only ever sees a compact, id-addressed view of the events. It never se
 
 ```bash
 # clone
-git clone https://github.com/NotACop38/casebound.git
-cd casebound
+git clone https://github.com/NotACop38/Casebound.git
+cd Casebound
 
 # install (Python 3.11+)
 python -m venv .venv && source .venv/bin/activate
@@ -115,6 +115,20 @@ casebound demo
 
 The demo ingests a synthetic, multi-stage intrusion with known ground truth, builds the timeline, tags ATT&CK, runs the verifier against a local or mocked model, and writes the reports, the Navigator layer, and the metrics, all offline. It prints the metrics and asserts they hit their targets.
 
+## Run it on your own evidence
+
+`casebound report` runs the same pipeline on tool output you already collected:
+
+```bash
+# a Hayabusa CSV timeline, for example
+casebound report triage_timeline.csv --source hayabusa --case-name "ACME triage"
+
+# any delimited CSV, once you describe its columns (docs/ingest-generic-csv.md)
+casebound report edr_export.csv --source generic_csv --column-map edr_map.json
+```
+
+`--source` selects the adapter: `hayabusa`, `eztools`, `chainsaw`, `velociraptor`, `plaso`, or `generic_csv`. With no model configured the report is fully deterministic: the normalized timeline, ATT&CK tags, episodes, indicators, and the evidence appendix, with no narrative (and nothing ever leaves the host). Set `CASEBOUND_PROVIDER=local` (see `.env.example`) to add the verified narrative from an on-host model; a cloud provider additionally requires the explicit `--allow-cloud` consent and is always preceded by the redaction pass.
+
 ## Features
 
 - Verified narrative: every claim cited to a real event, or rejected and logged.
@@ -123,7 +137,7 @@ The demo ingests a synthetic, multi-stage intrusion with known ground truth, bui
 - MITRE ATT&CK mapping and a Navigator heatmap of observed techniques.
 - Activity episodes and structured, defanged IOC extraction.
 - A self-contained HTML report (no external fetches at view time), plus JSON and Markdown.
-- Optional Timesketch export to plug into existing team workflows.
+- One command for your own evidence: `casebound report <file> --source <tool>`.
 - A synthetic intrusion generator and a one-command offline demo, no API keys.
 
 ## Architecture
@@ -139,10 +153,10 @@ A single Python package with firm module boundaries, each independently testable
 |`narrate`  |The provider-agnostic model interface and the drafting loop             |
 |`report`   |HTML, JSON, and Markdown renderers; ATT&CK Navigator layer              |
 |`generate` |The synthetic evidence generator and scenario definitions               |
-|`cli`      |The command surface (demo, generate, version; granular ingest, normalize, analyze, report are planned)|
+|`cli`      |The command surface: report (your evidence in, verified report out), demo, generate, version|
 |`web`      |Optional FastAPI viewer: browse the timeline and report (reuses `report`)|
 
-See <docs/PRD.md> for the full design and <docs/verification.md> for the claim and citation contract.
+See [docs/PRD.md](docs/PRD.md) for the full design and [docs/verification.md](docs/verification.md) for the claim and citation contract.
 
 ## Metrics
 
@@ -188,7 +202,7 @@ On the AI side, credit to the teams shipping AI-assisted DFIR triage (for exampl
 
 ## Roadmap
 
-The build runs vertical-slice-first. See <docs/ENGINEERING_CHECKLIST.md> for the phased plan with exit criteria.
+The build runs vertical-slice-first. See [docs/ENGINEERING_CHECKLIST.md](docs/ENGINEERING_CHECKLIST.md) for the phased plan with exit criteria.
 
 1. Vertical slice: one source, end to end, including the verifier and the hallucination trap.
 1. Breadth: more ingestion sources, each with fixtures and golden tests.

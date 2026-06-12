@@ -76,7 +76,7 @@ class HayabusaAdapter(IngestAdapter):
         handle) and otherwise the 1-based source line number, so every record is
         traceable even when a row lacks a RecordID.
         """
-        with source.open("r", encoding="utf-8", newline="") as handle:
+        with source.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
             # csv counts the header as line 1, so the first data row is line 2.
             for line_number, row in enumerate(reader, start=2):
@@ -101,8 +101,12 @@ class HayabusaAdapter(IngestAdapter):
         Hayabusa's verbose, all-field-info, super-verbose, and Timesketch profiles
         emit an ``EvtxFile`` column naming the exact EVTX file the event came from.
         That is the strongest provenance (FR11), so it is preferred when present;
-        otherwise the artifact is derived from the Windows channel. A scan over many
-        or renamed EVTX files thus records the true file rather than a generic name.
+        otherwise the artifact is derived from the Windows channel. Only the file's
+        base name is kept, matching the Chainsaw adapter: ``source_artifact`` is an
+        identity field, so the same event exported from collections mounted at
+        different paths must still collapse in cross-source dedup (FR12).
         """
         evtx_file = (data.get("EvtxFile") or "").strip()
-        return evtx_file if evtx_file else channel_to_artifact(channel)
+        if evtx_file:
+            return Path(evtx_file.replace("\\", "/")).name or evtx_file
+        return channel_to_artifact(channel)

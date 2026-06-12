@@ -92,13 +92,18 @@ not block the local tag and are not code gaps:
     `mitre-attack`, `grounded-generation`, `hallucination`, `llm`, `python`,
     `security`.
 
-## Intentionally out of scope for v0.1.0
+## Out of scope for this validation (since landed)
 
-- Phase 8 (raw-artifact mode via Dissect) is deferred. Dissect is AGPL-3.0 and is
-  kept isolated to preserve the permissive core license (decision D2). It is not
-  part of the whole-project Definition of Done.
-- Phase 9 (optional web UI) is a stretch goal and is deferred. It is not part of
-  the Definition of Done.
+This document is the point-in-time record of the v0.1.0 launch validation; its
+counts and statements describe the tree as it was then. Two phases were deferred
+at validation time and landed afterwards:
 
-Neither deferral weakens the verifier, the offline guarantee, or the defensive
-scope.
+- Phase 8 (raw-artifact mode via Dissect) landed as the opt-in, license-gated
+  `raw` extra, isolated in `casebound/ingest/raw` so the core stays Apache-2.0
+  (decision D2).
+- Phase 9 (the optional web UI) landed as the opt-in `web` extra: loopback-only,
+  reusing the report layer unchanged.
+
+Neither addition weakens the verifier, the offline guarantee, or the defensive
+scope; both are covered by the test suite and the CI gate. See CHANGELOG.md for
+what has landed since this validation.

@@ -66,7 +66,7 @@ class PlasoAdapter(IngestAdapter):
         Rows are yielded in file order. The ``raw_ref.record`` is the 1-based source
         line number (the header is line 1, so the first data row is line 2).
         """
-        with source.open("r", encoding="utf-8", newline="") as handle:
+        with source.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
             for line_number, row in enumerate(reader, start=2):
                 yield self._to_record(source, line_number, row)

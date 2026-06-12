@@ -175,39 +175,45 @@ class VerifiedClaim:
     """An accepted claim, carrying only verified facts (FR32).
 
     The authoritative content is the verified data, never the model's free prose.
-    ``asserts`` holds the facts the verifier checked against the backing event, and
-    ``backing_event_id`` names that event, so the report renders the claim from
-    checked fields only (see ``rendered_statement``) and links it to its evidence.
-    ``citations`` all resolve to real events. ``draft_text`` is the model's original
-    prose, kept for the audit but deliberately non-authoritative: it must never be
-    rendered as fact, because it can state things the verifier did not check. This
-    is the fence in code: the model proposes prose, but only verified fields reach
-    the report as facts (AGENTS.md prime directive).
+    ``asserts`` holds the spellings the model committed to and the verifier
+    checked; ``verified`` holds the backing event's canonical values for exactly
+    those fields. The two can differ within the checks' tolerance (case folding,
+    a small time window), and the report must always show the event's canonical
+    values, never the model's spelling, so a confusable path or a non-UTC offset
+    chosen by the model can never reach a reader as a fact. ``backing_event_id``
+    names the event that satisfied every asserted field. ``citations`` all
+    resolve to real events. ``draft_text`` is the model's original prose, kept
+    for the audit but deliberately non-authoritative: it must never be rendered
+    as fact, because it can state things the verifier did not check. This is the
+    fence in code: the model proposes prose, but only verified fields reach the
+    report as facts (AGENTS.md prime directive).
     """
 
     backing_event_id: str
     asserts: ClaimAssertion
+    verified: ClaimAssertion
     citations: tuple[str, ...]
     round_index: int
     draft_text: str
 
     def rendered_statement(self) -> str:
-        """Render the claim from checked fields only, for the report.
+        """Render the claim from the backing event's canonical fields, for the report.
 
-        Built solely from the verified assertions and the backing event id, so the
-        statement can never contain a fact the verifier did not confirm. The report
-        layer formats from these same checked fields; it must not surface
-        ``draft_text`` as a factual claim.
+        Built solely from the canonical values of the fields the verifier
+        confirmed, so the statement can never contain a fact the verifier did not
+        check, nor a model-chosen spelling of one it did. The report layer formats
+        from these same fields; it must not surface ``draft_text`` as a factual
+        claim.
         """
         parts: list[str] = []
-        if self.asserts.datetime is not None:
-            parts.append(f"at {self.asserts.datetime}")
-        if self.asserts.principal is not None:
-            parts.append(f"principal {self.asserts.principal}")
-        if self.asserts.action is not None:
-            parts.append(f"action {self.asserts.action}")
-        if self.asserts.object is not None:
-            parts.append(f"object {self.asserts.object}")
+        if self.verified.datetime is not None:
+            parts.append(f"at {self.verified.datetime}")
+        if self.verified.principal is not None:
+            parts.append(f"principal {self.verified.principal}")
+        if self.verified.action is not None:
+            parts.append(f"action {self.verified.action}")
+        if self.verified.object is not None:
+            parts.append(f"object {self.verified.object}")
         facts = ", ".join(parts)
         return f"{facts} [event {self.backing_event_id[:12]}]"
 
@@ -217,6 +223,7 @@ class VerifiedClaim:
             "statement": self.rendered_statement(),
             "backing_event_id": self.backing_event_id,
             "asserts": self.asserts.to_dict(),
+            "verified": self.verified.to_dict(),
             "citations": list(self.citations),
             "round_index": self.round_index,
             "draft_text": self.draft_text,
@@ -290,11 +297,27 @@ def _safe_parse(raw: str) -> list[Claim]:
         return []
 
 
-def _accept(claim: Claim, backing_event_id: str, round_index: int) -> VerifiedClaim:
-    """Build a verified claim from a claim the verifier accepted."""
+def _accept(claim: Claim, event: Event, round_index: int) -> VerifiedClaim:
+    """Build a verified claim, snapshotting the backing event's canonical fields.
+
+    The asserted spellings passed the consistency checks, but the checks are
+    deliberately tolerant (case folding, a small time window), so within that
+    equivalence class the model would otherwise choose the presentation: a
+    confusable look-alike path, a non-UTC offset, a different case. The snapshot
+    keeps the event's canonical value for exactly the fields the claim asserted,
+    and the report renders from it, never from the model's spelling.
+    """
+    asserts = claim.asserts
+    verified = ClaimAssertion(
+        datetime=event.datetime if asserts.datetime is not None else None,
+        principal=event.principal if asserts.principal is not None else None,
+        action=event.action if asserts.action is not None else None,
+        object=event.object if asserts.object is not None else None,
+    )
     return VerifiedClaim(
-        backing_event_id=backing_event_id,
-        asserts=claim.asserts,
+        backing_event_id=event.event_id,
+        asserts=asserts,
+        verified=verified,
         citations=claim.citations,
         round_index=round_index,
         draft_text=claim.text,
@@ -384,7 +407,7 @@ def verify_narrative(
     for claim in initial:
         verdict = verify_claim(claim, event_index, tol)
         if verdict.ok and verdict.backing_event_id is not None:
-            accepted.append(_accept(claim, verdict.backing_event_id, 0))
+            accepted.append(_accept(claim, event_index[verdict.backing_event_id], 0))
             continue
         audit.append(_rejection_entry(0, claim, verdict, dropped=round0_final))
         if not round0_final:
@@ -423,7 +446,7 @@ def verify_narrative(
 
             verdict = verify_claim(claim, event_index, tol)
             if verdict.ok and verdict.backing_event_id is not None:
-                accepted.append(_accept(claim, verdict.backing_event_id, round_index))
+                accepted.append(_accept(claim, event_index[verdict.backing_event_id], round_index))
                 continue
             audit.append(_rejection_entry(round_index, claim, verdict, dropped=is_final))
             # A matched revision keeps its id; a fresh claim gets a new one.

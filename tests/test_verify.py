@@ -548,3 +548,68 @@ def test_unparseable_revision_drops_outstanding_claim(tmp_path: Path) -> None:
     # The outstanding claim is not lost when the revision round is unparseable.
     assert len(result.dropped) == 1
     assert result.dropped[0].reason is RejectionReason.PRINCIPAL_MISMATCH
+
+
+# 6. Rejection-detail hygiene: details travel to the model as revision hints, so
+#    they must never quote the cited event's own field values; on the cloud path
+#    that prompt must not carry what the redaction pass stripped (FR36, Hard
+#    rule 2). The asserted values come from the model itself, so echoing those
+#    back leaks nothing.
+
+
+def test_rejection_details_never_quote_event_field_values(tmp_path: Path) -> None:
+    events = _events(tmp_path)
+    index = {event.event_id: event for event in events}
+    target = index[PROCESS_CREATE_ID]
+    # The scenario records all four checked fields on this event, so each
+    # per-field mismatch below is exercised against a real value.
+    assert target.principal is not None and target.object is not None
+
+    def _verdict(asserts: dict[str, str]) -> Any:
+        [claim] = parse_claims(
+            _response(
+                {
+                    "text": "A fabricated framing of a real event.",
+                    "citations": [PROCESS_CREATE_ID],
+                    "asserts": asserts,
+                }
+            )
+        )
+        return verify_claim(claim, index)
+
+    time_verdict = _verdict({"datetime": "2026-03-14T02:42:17Z"})
+    assert time_verdict.ok is False
+    assert time_verdict.reason is RejectionReason.TIME_MISMATCH
+    assert "02:42:17" in time_verdict.detail  # the model's own asserted value
+    assert "08:42:17" not in time_verdict.detail  # the event's real time
+
+    principal_verdict = _verdict({"principal": "CORP\\Administrator"})
+    assert principal_verdict.ok is False
+    assert principal_verdict.reason is RejectionReason.PRINCIPAL_MISMATCH
+    assert "Administrator" in principal_verdict.detail
+    assert target.principal not in principal_verdict.detail
+
+    action_verdict = _verdict({"action": "service_install"})
+    assert action_verdict.ok is False
+    assert action_verdict.reason is RejectionReason.ACTION_MISMATCH
+    assert "service_install" in action_verdict.detail
+    assert target.action not in action_verdict.detail
+
+    object_verdict = _verdict({"object": "C:\\Windows\\Temp\\evil.exe"})
+    assert object_verdict.ok is False
+    assert object_verdict.reason is RejectionReason.OBJECT_MISMATCH
+    assert "evil.exe" in object_verdict.detail
+    assert target.object not in object_verdict.detail
+
+    # And the grounded counterpart still passes the fence: asserting the event's
+    # exact fields is accepted and backed by the cited event.
+    grounded = _verdict(
+        {
+            "datetime": target.datetime,
+            "principal": target.principal,
+            "action": target.action,
+            "object": target.object,
+        }
+    )
+    assert grounded.ok is True
+    assert grounded.backing_event_id == PROCESS_CREATE_ID

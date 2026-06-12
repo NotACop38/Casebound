@@ -126,17 +126,23 @@ def _normalize_text(value: str) -> str:
 
 
 def _check_datetime(asserted: str, actual: str, tolerance: timedelta) -> str | None:
-    """Return a mismatch detail when the asserted time is not within tolerance."""
+    """Return a mismatch detail when the asserted time is not within tolerance.
+
+    The detail quotes only the asserted value, never the event's: details travel
+    back to the model as revision hints, and on the cloud path that prompt must
+    not carry evidence the redaction pass stripped (FR36, Hard rule 2). The
+    model already authored the asserted value, so echoing it leaks nothing.
+    """
     asserted_dt = _parse_utc(asserted)
     if asserted_dt is None:
         return f"asserted time {asserted!r} is not a parseable instant"
     actual_dt = _parse_utc(actual)
     # The event datetime is canonical UTC and always parses; guard defensively.
     if actual_dt is None:  # pragma: no cover - canonical events always parse
-        return f"event time {actual!r} is not a parseable instant"
+        return "the cited event's time is not a parseable instant"
     if abs(asserted_dt - actual_dt) > tolerance:
         return (
-            f"asserted time {asserted!r} differs from event time {actual!r} "
+            f"asserted time {asserted!r} differs from the cited event's time "
             f"by more than the tolerance ({tolerance})"
         )
     return None
@@ -152,6 +158,10 @@ def _check_event(
     order (datetime, principal, action, object) so the reason is deterministic. A
     field the event does not record (a null principal or object) can never satisfy
     an assertion about it.
+
+    Details name the event only by its id and never quote the event's own field
+    values: they are fed back to the model as revision hints, and on the cloud
+    path that prompt must not carry what the redaction pass stripped (FR36).
     """
     short_id = event.event_id[:12]
 
@@ -166,8 +176,8 @@ def _check_event(
     ):
         return (
             RejectionReason.PRINCIPAL_MISMATCH,
-            f"asserted principal {asserts.principal!r} does not match event "
-            f"{short_id} principal {event.principal!r}",
+            f"asserted principal {asserts.principal!r} does not match the principal "
+            f"of event {short_id}",
         )
 
     if asserts.action is not None and _normalize_text(asserts.action) != _normalize_text(
@@ -175,8 +185,7 @@ def _check_event(
     ):
         return (
             RejectionReason.ACTION_MISMATCH,
-            f"asserted action {asserts.action!r} does not match event "
-            f"{short_id} action {event.action!r}",
+            f"asserted action {asserts.action!r} does not match the action of event {short_id}",
         )
 
     if asserts.object is not None and (
@@ -184,8 +193,7 @@ def _check_event(
     ):
         return (
             RejectionReason.OBJECT_MISMATCH,
-            f"asserted object {asserts.object!r} does not match event "
-            f"{short_id} object {event.object!r}",
+            f"asserted object {asserts.object!r} does not match the object of event {short_id}",
         )
 
     return None

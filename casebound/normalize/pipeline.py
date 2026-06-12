@@ -35,6 +35,42 @@ if TYPE_CHECKING:
 
 __all__ = ["NormalizationProblem", "NormalizationResult", "normalize_records"]
 
+# The detail keys the dedup merge folds together when records collapse. The rule
+# tags are read by the ATT&CK tagger (enrich.attack); the titles are informative.
+_RULE_TAGS_KEY = "rule_mitre_tags"
+_RULE_TITLE_KEY = "rule_title"
+_EXTRA_TITLES_KEY = "additional_rule_titles"
+
+
+def _merge_duplicate_details(kept: Event, duplicate: Event) -> None:
+    """Fold a collapsing record's enrichment-bearing details into the kept event.
+
+    Detection sources like Hayabusa and Chainsaw emit one row per rule match, so
+    two rules firing on the same underlying record collapse to one event (FR12,
+    same identity fields). The later row can carry ATT&CK rule tags or a rule
+    title the kept row lacks; discarding them would lose technique mappings
+    depending on nothing but input order. Only the enrichment-bearing keys are
+    merged. Everything else stays first-seen: the identity fields are equal by
+    construction, and ``details`` is intentionally mutable on the frozen event.
+    """
+    extra_tags = duplicate.details.get(_RULE_TAGS_KEY)
+    if isinstance(extra_tags, list):
+        merged = kept.details.get(_RULE_TAGS_KEY)
+        if isinstance(merged, list):
+            merged.extend(tag for tag in extra_tags if tag not in merged)
+        else:
+            kept.details[_RULE_TAGS_KEY] = list(extra_tags)
+
+    title = duplicate.details.get(_RULE_TITLE_KEY)
+    if isinstance(title, str):
+        kept_title = kept.details.get(_RULE_TITLE_KEY)
+        if kept_title is None:
+            kept.details[_RULE_TITLE_KEY] = title
+        elif title != kept_title:
+            extras = kept.details.setdefault(_EXTRA_TITLES_KEY, [])
+            if isinstance(extras, list) and title not in extras:
+                extras.append(title)
+
 
 @dataclass(frozen=True)
 class NormalizationProblem:
@@ -122,7 +158,10 @@ def normalize_records(
             result.events.append(event)
             result.provenance[event.event_id] = [event.raw_ref]
         else:
-            # Identical event already recorded: keep this row's provenance (FR12).
+            # Identical event already recorded: keep this row's provenance (FR12)
+            # and fold its detection details into the kept event, so a second
+            # rule firing on the same record never loses its ATT&CK tags.
+            _merge_duplicate_details(seen[event.event_id], event)
             result.provenance[event.event_id].append(record.raw_ref)
 
     return result

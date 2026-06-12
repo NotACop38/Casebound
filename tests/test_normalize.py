@@ -197,6 +197,54 @@ def test_identical_events_dedupe_and_keep_all_provenance() -> None:
     assert result.duplicate_count == 1
 
 
+_DEDUP_HEADER = (
+    '"Timestamp","Computer","Channel","EventID","Level",'
+    '"MitreTactics","MitreTags","RecordID","RuleTitle","Details"'
+)
+_DEDUP_ROW_UNTAGGED = (
+    '"2026-03-14 04:42:17.000 -04:00","WIN-ACCT-07","Security","4688","high",'
+    '"","","80038","Suspicious Process Lineage",'
+    '"NewProcessName: C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe '
+    '¦ SubjectUserName: jdoe ¦ SubjectDomainName: CORP"'
+)
+_DEDUP_ROW_TAGGED = (
+    '"2026-03-14 04:42:17.000 -04:00","WIN-ACCT-07","Security","4688","high",'
+    '"Execution","T1059.001","80038","Office Application Spawned PowerShell",'
+    '"NewProcessName: C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe '
+    '¦ SubjectUserName: jdoe ¦ SubjectDomainName: CORP"'
+)
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        pytest.param([_DEDUP_ROW_UNTAGGED, _DEDUP_ROW_TAGGED], id="untagged-first"),
+        pytest.param([_DEDUP_ROW_TAGGED, _DEDUP_ROW_UNTAGGED], id="tagged-first"),
+    ],
+)
+def test_dedup_merges_rule_tags_from_collapsing_detections(rows: list[str], tmp_path: Path) -> None:
+    # Detection tools emit one row per rule match, so two rules firing on the same
+    # underlying record collapse to one event (FR12). The collapse must merge the
+    # detections' ATT&CK rule tags and titles: which row arrives first is an
+    # artifact of the export, and a technique mapping must never depend on it.
+    from casebound.enrich.attack import tag_events
+
+    csv_path = tmp_path / "double_detection.csv"
+    csv_path.write_text("\n".join([_DEDUP_HEADER, *rows]) + "\n", encoding="utf-8")
+    result = normalize_records(HayabusaAdapter().read(csv_path))
+
+    assert result.event_count == 1
+    assert result.duplicate_count == 1
+    [event] = result.events
+    assert event.details["rule_mitre_tags"] == ["T1059.001"]
+    titles = {event.details["rule_title"], *event.details.get("additional_rule_titles", [])}
+    assert titles == {"Suspicious Process Lineage", "Office Application Spawned PowerShell"}
+
+    # The merged tag is promoted by the deterministic tagger, whatever the order.
+    [tagged] = tag_events(result.events)
+    assert "T1059.001" in {tech.technique_id for tech in tagged.attack_techniques}
+
+
 # 4. Robustness: malformed reported, uncovered event id still mapped (FR7, FR8).
 
 

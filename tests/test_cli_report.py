@@ -345,7 +345,7 @@ def test_report_command_unreadable_evidence_fails_cleanly(tmp_path: Path) -> Non
     )
 
     assert result.exit_code == 1
-    assert "could not read" in result.output
+    assert "failed processing" in result.output
 
 
 def test_report_command_out_dir_blocked_by_a_file_fails_cleanly(tmp_path: Path) -> None:

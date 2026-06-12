@@ -89,7 +89,7 @@ def _ensure_out_dir(out_dir: Path) -> None:
     """
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
-    except (FileExistsError, NotADirectoryError) as exc:
+    except (FileExistsError, NotADirectoryError, PermissionError) as exc:
         typer.echo(f"error: --out-dir {out_dir} is not a usable directory: {exc}", err=True)
         raise typer.Exit(code=2) from exc
 
@@ -715,11 +715,17 @@ def report(
         if len(exc.problems) > 3:
             typer.echo(f"  ... and {len(exc.problems) - 3} more row(s)", err=True)
         raise typer.Exit(code=1) from exc
+    except ProviderError as exc:
+        # A provider can fail lazily, from the first draft call: most commonly a
+        # configured provider whose optional SDK package is not installed.
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
     except (OSError, UnicodeDecodeError, csv.Error, json.JSONDecodeError) as exc:
-        # A file-level failure: a truncated or non-JSON Chainsaw export, a binary
-        # blob, an oversized CSV field. The per-row FR7 contract lives in the
-        # normalize layer; this turns whole-file failures into a clean error.
-        typer.echo(f"error: could not read {evidence} as {source.value}: {exc}", err=True)
+        # A file-level failure while reading the evidence or writing the outputs:
+        # a truncated or non-JSON Chainsaw export, a binary blob, an oversized
+        # CSV field, an unwritable output file. The per-row FR7 contract lives in
+        # the normalize layer; this turns whole-file failures into a clean error.
+        typer.echo(f"error: failed processing {evidence} as {source.value}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
     typer.echo(f"ingested {evidence} as {source.value}: {result.event_count} event(s)")

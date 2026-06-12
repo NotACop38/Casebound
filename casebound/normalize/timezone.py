@@ -36,6 +36,18 @@ __all__ = ["NormalizedTimestamp", "format_utc_offset", "normalize_timestamp"]
 # The label recorded when no zone is known and UTC had to be assumed.
 ASSUMED_UTC = "assumed_utc"
 
+# dateutil fills any date component the string omits from its ``default``
+# argument, which defaults to the moment of the run: a time-only or fragment
+# string ("08:42:17", "March", a stray numeric cell) would be silently stamped
+# with today's date, fabricating an instant and making the content-derived
+# event ids differ between runs. Parsing against two sentinels that differ in
+# year, month, and day exposes any filled-in component: when the two results
+# disagree, the string did not pin its own date and is rejected. Both sentinels
+# carry a zero time so a date-only string still resolves (to midnight) the same
+# way under both, deterministically.
+_DEFAULT_A = datetime(2001, 1, 1)
+_DEFAULT_B = datetime(2002, 2, 2)
+
 
 class TimestampError(ValueError):
     """Raised when a raw timestamp string cannot be parsed into an instant."""
@@ -97,9 +109,14 @@ def normalize_timestamp(raw: str, *, assume_timezone: str | None = None) -> Norm
         raise TimestampError("timestamp is empty")
 
     try:
-        parsed = date_parser.parse(raw)
+        parsed = date_parser.parse(raw, default=_DEFAULT_A)
+        check = date_parser.parse(raw, default=_DEFAULT_B)
     except (ValueError, OverflowError, TypeError) as exc:
         raise TimestampError(f"cannot parse timestamp {raw!r}: {exc}") from exc
+    if parsed != check:
+        raise TimestampError(
+            f"timestamp {raw!r} does not carry a complete date; refusing to fill the missing parts"
+        )
 
     if parsed.tzinfo is not None and parsed.utcoffset() is not None:
         # The string fixes the instant via its offset. assume_timezone, if given,

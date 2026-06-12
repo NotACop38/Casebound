@@ -145,6 +145,24 @@ def test_unparseable_timestamp_raises(bad: str) -> None:
         normalize_timestamp(bad)
 
 
+@pytest.mark.parametrize("partial", ["08:42:17", "4624", "March", "03-14 08:42:17"])
+def test_partial_timestamp_is_rejected_not_filled_from_today(partial: str) -> None:
+    # dateutil would silently complete a partial timestamp from the current date,
+    # fabricating an instant and making the content-derived event ids differ
+    # between runs. A string that does not pin its own date must be reported as
+    # malformed (FR7), never completed.
+    with pytest.raises(TimestampError, match="complete date"):
+        normalize_timestamp(partial)
+
+
+def test_date_only_timestamp_resolves_to_midnight_deterministically() -> None:
+    # A date without a time pins its own date, so it resolves the same way on
+    # every run: midnight, with the UTC assumption flagged.
+    stamp = normalize_timestamp("2026-03-14")
+    assert stamp.datetime_utc == "2026-03-14T00:00:00Z"
+    assert stamp.source_timezone == "assumed_utc"
+
+
 def test_unknown_assume_timezone_raises() -> None:
     with pytest.raises(TimestampError):
         normalize_timestamp("2026-03-14 04:30:05", assume_timezone="Mars/Olympus")

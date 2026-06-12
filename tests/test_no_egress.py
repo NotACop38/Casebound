@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import NoReturn
 
 import pytest
-from casebound.cli import DEMO_REPORT_NAME, app, run_demo
+from casebound.cli import REPORT_HTML_NAME, app, run_demo
 from casebound.narrate import OfflineDemoNarrator
 from casebound.narrate.llm import build_model_from_env
 from typer.testing import CliRunner
@@ -103,7 +103,7 @@ def test_demo_cli_default_makes_no_network_call(no_network_no_keys: None, tmp_pa
     result = CliRunner().invoke(app, ["demo", "--out-dir", str(out_dir)])
 
     assert result.exit_code == 0, result.output
-    assert (out_dir / DEMO_REPORT_NAME).exists()
+    assert (out_dir / REPORT_HTML_NAME).exists()
     # The default no-key path drafts with the offline narrator, never a network model.
     assert "offline demo narrator" in result.output.lower()
 
@@ -113,7 +113,7 @@ def test_demo_cli_no_model_makes_no_network_call(no_network_no_keys: None, tmp_p
     result = CliRunner().invoke(app, ["demo", "--out-dir", str(out_dir), "--no-model"])
 
     assert result.exit_code == 0, result.output
-    assert (out_dir / DEMO_REPORT_NAME).exists()
+    assert (out_dir / REPORT_HTML_NAME).exists()
 
 
 def test_network_guard_blocks_real_connections(no_network_no_keys: None) -> None:

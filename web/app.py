@@ -325,17 +325,21 @@ def create_app(
     async def upload(request: Request) -> Response:
         # The header gates run before the multipart body is parsed; only then is
         # the form read, with the server holding the body to its declared length.
+        # The context manager closes the parsed parts (and deletes any spooled
+        # temp file) when the handler exits, so a long-running viewer cannot
+        # leak descriptors or temp files across uploads.
         _enforce_upload_guards(request, max_upload_bytes)
-        form = await request.form()
-        file = form.get("file")
-        if not isinstance(file, UploadFile):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="missing 'file' upload field",
-            )
-        csv_text = await _read_upload(file, max_upload_bytes)
+        async with request.form() as form:
+            file = form.get("file")
+            if not isinstance(file, UploadFile):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="missing 'file' upload field",
+                )
+            csv_text = await _read_upload(file, max_upload_bytes)
+            filename = file.filename or "upload.csv"
         case_id = store.next_upload_id()
-        case, _problems = build_uploaded_case(case_id, file.filename or "upload.csv", csv_text)
+        case, _problems = build_uploaded_case(case_id, filename, csv_text)
         if case.event_count == 0:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

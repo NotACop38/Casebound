@@ -274,11 +274,14 @@ def test_upload_without_content_length_is_refused() -> None:
 
 
 def test_oversized_declared_length_is_refused_before_parsing() -> None:
-    # The declared Content-Length alone trips the gate: the handler never parses
-    # the multipart body of a request that announces more than the cap allows.
+    # The declared Content-Length alone trips the gate: the file part here is
+    # well under the per-file cap (the old post-parse check would have accepted
+    # it), but the total declared body is over the cap plus framing overhead, so
+    # only the pre-parse header gate can produce this 413.
     client = _client(max_upload_bytes=1024)
-    files = {"file": ("timeline.csv", "x" * (1024 * 1024), "text/csv")}
-    resp = client.post("/upload", files=files)
+    files = {"file": ("timeline.csv", _sample_csv(), "text/csv")}
+    filler = {"note": "x" * (1024 * 1024)}
+    resp = client.post("/upload", files=files, data=filler)
     assert resp.status_code == 413
 
 

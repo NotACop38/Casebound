@@ -318,16 +318,26 @@ def test_channel_to_artifact(channel: str, artifact: str) -> None:
 
 def test_adapter_prefers_evtx_file_for_artifact(tmp_path: Path) -> None:
     # When a row carries Hayabusa's EvtxFile column, it is the exact source file and
-    # is preferred over the channel-derived name for provenance (FR11).
+    # is preferred over the channel-derived name for provenance (FR11). Only the
+    # base name is kept, matching the Chainsaw adapter: source_artifact is an
+    # identity field, so the same event exported from collections mounted at
+    # different paths must still collapse in cross-source dedup (FR12).
     csv_text = (
         '"Timestamp","Computer","Channel","EventID","EvtxFile","Details"\n'
         '"2026-03-14 04:42:17.000 -04:00","WIN-ACCT-07","Security","4688",'
         '"D:\\evidence\\host-a-Security.evtx","NewProcessName: C:\\Windows\\x.exe"\n'
+        '"2026-03-14 04:42:17.000 -04:00","WIN-ACCT-07","Security","4688",'
+        '"E:\\other-mount\\host-a-Security.evtx","NewProcessName: C:\\Windows\\x.exe"\n'
     )
     path = tmp_path / "with_evtx.csv"
     path.write_text(csv_text, encoding="utf-8")
     records = list(HayabusaAdapter().read(path))
-    assert records[0].source_artifact == "D:\\evidence\\host-a-Security.evtx"
+    assert records[0].source_artifact == "host-a-Security.evtx"
+
+    # The same record collected under two mount points collapses to one event.
+    result = normalize_records(iter(records))
+    assert result.event_count == 1
+    assert result.duplicate_count == 1
 
 
 def test_adapter_falls_back_to_channel_when_no_evtx_file() -> None:

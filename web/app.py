@@ -19,13 +19,16 @@ the report it serves is self-contained (no asset is fetched at view time). The
 server binds to loopback only by default (``serve``). Evidence never leaves the
 host.
 
-Upload hardening. Any upload is bounded and typed before it is touched: the
-filename must be a ``.csv`` and the content type must be a text or CSV type; the
-body is streamed with a hard byte cap and rejected past it; the bytes must decode
-as UTF-8 text. The upload is then parsed read-only as a Hayabusa CSV timeline. It
-is never opened as a program, executed, or fetched from anywhere, and no URL or
-path the client supplies is ever dereferenced. An upload that yields no events is
-rejected rather than rendered.
+Upload hardening. An upload is gated before its body is even parsed: a
+browser-issued cross-site POST is refused via fetch metadata and the Origin
+header, and the request must declare a Content-Length within the cap, which the
+HTTP server then enforces, so the multipart parser can never receive (or spool)
+more than the bound. The file itself must then pass the type gate (a ``.csv``
+name and a text or CSV content type), the exact byte cap, and a UTF-8 decode,
+before being parsed read-only as a Hayabusa CSV timeline. It is never opened as
+a program, executed, or fetched from anywhere, and no URL or path the client
+supplies is ever dereferenced. An upload that yields no events is rejected
+rather than rendered.
 
 Style: no em dashes or en dashes anywhere (PRD Section 15).
 """
@@ -35,10 +38,12 @@ from __future__ import annotations
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from starlette.datastructures import UploadFile
 
 from web.case import (
     DEMO_CASE_ID,
@@ -82,6 +87,11 @@ _ALLOWED_CONTENT_TYPES = frozenset(
 
 # Streamed-read chunk size for the bounded upload reader.
 _UPLOAD_CHUNK = 64 * 1024
+
+# Headroom on the declared Content-Length over the file cap: the multipart
+# framing (boundary lines and part headers) costs a little beyond the file
+# bytes. The exact per-file cap is still enforced when the part is read.
+_MULTIPART_OVERHEAD = 64 * 1024
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
@@ -150,6 +160,58 @@ def _case_summary(case: Case) -> dict[str, Any]:
         "is_demo": case.case_id == DEMO_CASE_ID,
         "has_narrative": case.has_narrative,
     }
+
+
+def _enforce_upload_guards(request: Request, max_bytes: int) -> None:
+    """Refuse a cross-site or oversized upload on the headers, before any parsing.
+
+    FastAPI's ``File`` dependency would run the multipart parser to completion
+    (spooling file parts to disk with no upper bound) before a handler could
+    check anything, so the real ingress controls live here and the handler
+    parses the form only after they pass:
+
+      - A browser-issued cross-site POST is refused via fetch metadata and the
+        Origin header. The viewer binds loopback, but a hostile page in the
+        operator's browser could otherwise drive uploads cross-origin: sending
+        a form POST needs no CORS, CORS only gates reading the response.
+        Requests without browser headers (curl) are unaffected; CSRF needs a
+        browser.
+      - The request must declare a Content-Length within the cap (plus the
+        multipart framing overhead). The HTTP server enforces that a body never
+        exceeds its declared length, so the parser can never receive more than
+        the bound; a request that declares no length is refused.
+    """
+    site = request.headers.get("sec-fetch-site")
+    if site is not None and site not in ("same-origin", "none"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="cross-site uploads are refused",
+        )
+    origin = request.headers.get("origin")
+    if origin is not None and urlsplit(origin).netloc != request.headers.get("host", ""):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="cross-origin uploads are refused",
+        )
+
+    declared = request.headers.get("content-length")
+    if declared is None:
+        raise HTTPException(
+            status_code=status.HTTP_411_LENGTH_REQUIRED,
+            detail="uploads must declare a Content-Length",
+        )
+    try:
+        length = int(declared)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Content-Length is not a number",
+        ) from exc
+    if length > max_bytes + _MULTIPART_OVERHEAD:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"upload exceeds the {max_bytes} byte limit",
+        )
 
 
 async def _read_upload(file: UploadFile, max_bytes: int) -> str:
@@ -260,7 +322,17 @@ def create_app(
         return HTMLResponse(render_case_report(case))
 
     @app.post("/upload")
-    async def upload(file: UploadFile = File(...)) -> Response:
+    async def upload(request: Request) -> Response:
+        # The header gates run before the multipart body is parsed; only then is
+        # the form read, with the server holding the body to its declared length.
+        _enforce_upload_guards(request, max_upload_bytes)
+        form = await request.form()
+        file = form.get("file")
+        if not isinstance(file, UploadFile):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="missing 'file' upload field",
+            )
         csv_text = await _read_upload(file, max_upload_bytes)
         case_id = store.next_upload_id()
         case, _problems = build_uploaded_case(case_id, file.filename or "upload.csv", csv_text)

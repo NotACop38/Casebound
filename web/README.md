@@ -36,11 +36,19 @@ It serves on `http://127.0.0.1:8000` by default. Pages:
 
 ## Upload hardening
 
-An upload is bounded and typed before it is touched, and is only ever read as text:
+An upload is gated on its headers before the body is even parsed, and is only ever
+read as text:
 
+- A browser-issued cross-site POST is refused (403) via fetch metadata and the
+  Origin header, so a hostile page in your browser cannot drive uploads at the
+  loopback server.
+- The request must declare a Content-Length within the cap (5 MiB by default,
+  plus multipart framing overhead), or it is rejected (411 or 413) before the
+  multipart parser receives a single body byte; the HTTP server holds the body
+  to its declared length.
 - The filename must be a `.csv` and the content type must be a text or CSV type, or
   it is rejected (415).
-- The body is streamed with a hard byte cap (5 MiB by default) and rejected past it
+- The file part itself is then read against the exact byte cap and rejected past it
   (413).
 - The bytes must decode as UTF-8; binary content is rejected (415).
 - The upload is parsed read-only as a Hayabusa CSV timeline. It is never opened as a

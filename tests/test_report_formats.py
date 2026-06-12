@@ -256,3 +256,39 @@ def test_report_timeline_orders_subsecond_events_chronologically(tmp_path: Path)
         whole.event_id,
         fractional.event_id,
     ]
+
+
+def test_markdown_neutralizes_hostile_evidence_content(tmp_path: Path) -> None:
+    # Evidence fields are attacker-controlled: a crafted message, principal, or
+    # object must not be able to inject raw HTML, a javascript: link, a code-span
+    # breakout, or new document structure into the ticket-ready Markdown.
+    from casebound.normalize import RawRef
+    from casebound.report.markdown import render_markdown_report
+
+    hostile = Event(
+        datetime="2026-03-14T09:00:17Z",
+        timestamp_raw="2026-03-14T09:00:17Z",
+        source_timezone="UTC",
+        timestamp_desc="logged",
+        message="<script>alert(1)</script> [click me](javascript:alert(1))\n# fake heading",
+        action="process_create",
+        source_tool="hayabusa",
+        source_artifact="Security.evtx",
+        raw_ref=RawRef(source_file="x.csv", record="1"),
+        host="HOST-1",
+        principal="CORP\\evil`whoami`",
+        object="C:\\tools\\a|b`c.exe",
+        details={"Cmd`Line": "run `this` | that"},
+    )
+
+    markdown = render_markdown_report([hostile], None, scenario="hostile<&>case")
+
+    # Raw HTML and the javascript: link are escaped, not emitted.
+    assert "<script>" not in markdown
+    assert "[click me](javascript:" not in markdown
+    # The embedded newline cannot start a new heading line.
+    assert "\n# fake heading" not in markdown
+    # No code span in the document carries an interior backtick or raw pipe; the
+    # hostile principal and object render with backticks replaced.
+    assert "evil'whoami'" in markdown
+    assert "a\\|b'c.exe" in markdown

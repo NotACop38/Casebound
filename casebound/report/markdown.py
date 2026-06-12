@@ -19,6 +19,7 @@ Style: no em dashes or en dashes anywhere (PRD Section 15).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -41,34 +42,62 @@ def _short(event_id: str) -> str:
     return event_id[:_SHORT_ID_LEN]
 
 
-def _cell(value: Any) -> str:
-    """Render one table cell: stringify, blank out None, and escape the pipe.
+# The structurally dangerous Markdown punctuation neutralized in evidence-derived
+# prose: a backslash escape kills links and images ([]()), code spans (backtick),
+# raw HTML (<>), and table breaks (|). Backslash itself is in the class so an
+# existing one cannot un-escape what follows. Emphasis characters (*_) are left
+# alone: they are cosmetic, and escaping them would mangle snake_case verbs and
+# Windows paths in the raw text.
+_MD_SPECIAL_RE = re.compile(r"[\\`\[\]<>()|]")
 
-    A literal pipe would break the Markdown table, so it is escaped. None renders
-    as an empty cell, matching how the HTML table leaves an absent field blank.
+
+def _collapse(value: Any) -> str:
+    """Stringify and collapse all whitespace runs (newlines included) to a space.
+
+    Evidence can carry embedded newlines; collapsed, a value can never break out
+    of its bullet or table row into new document structure.
+    """
+    return " ".join(str(value).split())
+
+
+def _cell(value: Any) -> str:
+    """Render evidence text inert, for prose and table cells alike.
+
+    Evidence fields are attacker-controlled by definition, and this report is
+    pasted into ticket renderers that may honor raw HTML and links. Whitespace
+    collapses so a value cannot break the structure, and the Markdown-significant
+    punctuation is backslash-escaped so a value cannot open a link, a code span,
+    raw HTML, emphasis, or a heading. None renders as an empty string, matching
+    how the HTML table leaves an absent field blank.
     """
     if value is None:
         return ""
-    return str(value).replace("|", "\\|")
+    return _MD_SPECIAL_RE.sub(lambda match: "\\" + match.group(0), _collapse(value))
+
+
+def _code_span(text: str) -> str:
+    """Wrap already-collapsed text in a code span it cannot break out of.
+
+    A backslash does not escape inside a code span, so backticks are replaced
+    outright; pipes are escaped because GFM splits table rows before code spans
+    are parsed.
+    """
+    return "`" + text.replace("`", "'").replace("|", "\\|") + "`"
 
 
 def _mono(value: Any) -> str:
     """Render a value as inline code for a table cell, or blank when absent."""
     if value is None or value == "":
         return ""
-    return f"`{_cell(value)}`"
+    return _code_span(_collapse(value))
 
 
 def _inline(value: Any) -> str:
-    """Render a scalar detail value as a safe inline code span.
-
-    Any backtick in the value is replaced so it cannot break out of the code span,
-    so hostile or odd evidence text stays inert in the Markdown.
-    """
-    text = "" if value is None else str(value)
+    """Render a scalar detail value as a safe inline code span."""
+    text = "" if value is None else _collapse(value)
     if text == "":
         return "(empty)"
-    return f"`{text.replace('`', chr(39))}`"
+    return _code_span(text)
 
 
 def _detail_lines(key: str, value: Any, indent: str) -> list[str]:
@@ -77,19 +106,21 @@ def _detail_lines(key: str, value: Any, indent: str) -> list[str]:
     A mapping (the Hayabusa ``fields`` block, say) becomes a nested bullet list, a
     list renders inline, and a scalar renders as an inline code span. This carries
     the same source specifics the HTML appendix shows, for ticket-only audit.
+    Keys are evidence-derived too, so they are neutralized like any other text.
     """
+    label = _cell(key)
     if isinstance(value, dict):
         if not value:
-            return [f"{indent}- {key}: (none)"]
-        out = [f"{indent}- {key}:"]
+            return [f"{indent}- {label}: (none)"]
+        out = [f"{indent}- {label}:"]
         for sub_key, sub_value in value.items():
             out.extend(_detail_lines(str(sub_key), sub_value, indent + "  "))
         return out
     if isinstance(value, (list, tuple)):
         if not value:
-            return [f"{indent}- {key}: (none)"]
-        return [f"{indent}- {key}: " + ", ".join(_inline(item) for item in value)]
-    return [f"{indent}- {key}: {_inline(value)}"]
+            return [f"{indent}- {label}: (none)"]
+        return [f"{indent}- {label}: " + ", ".join(_inline(item) for item in value)]
+    return [f"{indent}- {label}: {_inline(value)}"]
 
 
 def _render(model: ReportModel) -> str:
@@ -99,8 +130,8 @@ def _render(model: ReportModel) -> str:
     lines.append("# Casebound investigation report")
     lines.append("")
     lines.append(
-        f"Scenario: {model.scenario}. Source tool: {model.source_tool}. "
-        f"Narrative: {model.model_label}."
+        f"Scenario: {_cell(model.scenario)}. Source tool: {_cell(model.source_tool)}. "
+        f"Narrative: {_cell(model.model_label)}."
     )
     lines.append("")
     lines.append(
@@ -150,7 +181,7 @@ def _render(model: ReportModel) -> str:
         )
         lines.append("")
         for claim in model.accepted:
-            lines.append(f"- {claim.statement}")
+            lines.append(f"- {_cell(claim.statement)}")
             cite = f"  Backing evidence: `{_short(claim.backing_event_id)}`"
             if claim.context_citations:
                 context = ", ".join(f"`{_short(cid)}`" for cid in claim.context_citations)
@@ -174,8 +205,8 @@ def _render(model: ReportModel) -> str:
             flags = entry["reason"]
             if entry["dropped"]:
                 flags += ", dropped"
-            lines.append(f"- [{flags}] (round {entry['round_index']}) {entry['claim_text']}")
-            lines.append(f"  Reason: {entry['detail']}")
+            lines.append(f"- [{flags}] (round {entry['round_index']}) {_cell(entry['claim_text'])}")
+            lines.append(f"  Reason: {_cell(entry['detail'])}")
             if entry["citations"]:
                 cited = ", ".join(f"`{cid}`" for cid in entry["citations"])
                 lines.append(f"  Cited: {cited}")
@@ -223,11 +254,11 @@ def _render(model: ReportModel) -> str:
     lines.append("")
     if model.episodes:
         for episode in model.episodes:
-            host = episode["host"] if episode["host"] is not None else "unattributed"
-            principal = episode["principal"] if episode["principal"] is not None else "unattributed"
+            host = _cell(episode["host"]) or "unattributed"
+            principal = _mono(episode["principal"]) or "`unattributed`"
             members = ", ".join(f"`{_short(eid)}`" for eid in episode["event_ids"])
             lines.append(
-                f"- `{episode['episode_id']}` on {host}, principal `{principal}`: "
+                f"- `{episode['episode_id']}` on {host}, principal {principal}: "
                 f"{episode['event_count']} event(s) from {episode['start']} to {episode['end']}."
             )
             lines.append(f"  Events: {members}")
@@ -300,7 +331,7 @@ def _render(model: ReportModel) -> str:
             for key, value in event["details"].items():
                 lines.extend(_detail_lines(str(key), value, "  "))
         if event["provenance"]:
-            provenance = ", ".join(f"`{ref}`" for ref in event["provenance"])
+            provenance = ", ".join(_mono(ref) for ref in event["provenance"])
             lines.append(f"- provenance: {provenance}")
         lines.append("")
 

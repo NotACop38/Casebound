@@ -96,6 +96,18 @@ _UNC_PATH_RE = re.compile(rf"\\\\[^{_PATH_STOP}]+")
 # A hostname with at least one dot and an alphabetic top-level label.
 _DOMAIN_RE = re.compile(r"\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}\b")
 
+# Domains are scanned per token, never across the whole string: the domain
+# pattern backtracks quadratically on a pathological label chain ("a.a.a..."),
+# and evidence content is attacker-controlled, so an unbounded scan would be a
+# denial of service on extraction and on the cloud redaction pass that shares
+# it. A token is a maximal run of word, dot, and hyphen characters; every other
+# character is a word boundary for the domain pattern anyway, so splitting
+# there changes no match. A token longer than the DNS maximum of 253 characters
+# cannot be a domain name and is skipped, which bounds the scan per token and
+# keeps the whole pass linear in the input.
+_DOMAIN_TOKEN_RE = re.compile(r"[\w.-]+")
+_MAX_DOMAIN_TOKEN = 253
+
 # Final labels that look like a domain TLD but are file extensions, so a bare file
 # name in free text (``updater.exe``) is not promoted to a domain. None of these is
 # a real TLD, so a genuine domain is never rejected by this list.
@@ -123,6 +135,32 @@ _FILE_EXTENSIONS: frozenset[str] = frozenset(
         "mui",
         "nls",
         "evtx",
+        # Common document, data, and media extensions. Deliberately absent
+        # because they ARE real TLDs and a genuine domain must never be
+        # rejected: zip, py, sh, pl, rs, so, md, cab.
+        "doc",
+        "docx",
+        "xls",
+        "xlsx",
+        "ppt",
+        "pptx",
+        "pdf",
+        "csv",
+        "json",
+        "xml",
+        "rtf",
+        "html",
+        "htm",
+        "yaml",
+        "yml",
+        "bak",
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "iso",
+        "jar",
+        "conf",
     }
 )
 
@@ -293,11 +331,15 @@ def _candidates_from_value(value: str) -> list[tuple[str, str]]:
     work = _blank_spans(work, _UNC_PATH_RE, found, IOC_TYPE_PATH)
     work = _blank_spans(work, _HASH_RE, found, IOC_TYPE_HASH)
     work = _blank_spans(work, _IPV4_RE, found, IOC_TYPE_IP)
-    for match in _DOMAIN_RE.finditer(work):
-        candidate = match.group(0)
-        if candidate.rsplit(".", 1)[-1].lower() in _FILE_EXTENSIONS:
+    for token_match in _DOMAIN_TOKEN_RE.finditer(work):
+        token = token_match.group(0)
+        if len(token) > _MAX_DOMAIN_TOKEN:
             continue
-        found.append((IOC_TYPE_DOMAIN, candidate))
+        for match in _DOMAIN_RE.finditer(token):
+            candidate = match.group(0)
+            if candidate.rsplit(".", 1)[-1].lower() in _FILE_EXTENSIONS:
+                continue
+            found.append((IOC_TYPE_DOMAIN, candidate))
     return found
 
 

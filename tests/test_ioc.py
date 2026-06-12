@@ -26,7 +26,7 @@ from casebound.enrich import (
     extract_iocs,
     tag_events,
 )
-from casebound.enrich.ioc import _candidates_from_value
+from casebound.enrich.ioc import _candidates_from_value, find_indicators
 from casebound.generate.synth import write_samples
 from casebound.ingest import HayabusaAdapter
 from casebound.normalize import Event, RawRef, normalize_records
@@ -198,3 +198,41 @@ def test_scenario_recovers_the_known_iocs(tmp_path: Path) -> None:
     # The seed-derived service-binary hash is recovered as a 64-hex hash indicator.
     hashes = values_by_type.get(IOC_TYPE_HASH, set())
     assert any(len(h) == 64 for h in hashes)
+
+
+def test_domain_scan_is_bounded_on_pathological_input() -> None:
+    # Evidence content is attacker-controlled, and the domain pattern backtracks
+    # quadratically on an endless label chain. The per-token scan with the DNS
+    # length cap must classify a hostile string in linear time (the unbounded
+    # scan took minutes at this size) and find nothing in it.
+    import time
+
+    hostile = "a." * 50_000 + "!"
+    start = time.perf_counter()
+    found = find_indicators(hostile)
+    elapsed = time.perf_counter() - start
+
+    assert found == []
+    # Generous bound: the linear scan takes milliseconds; the quadratic one minutes.
+    assert elapsed < 2.0
+
+
+def test_domain_longer_than_dns_maximum_is_not_extracted() -> None:
+    # A run of domain characters longer than 253 cannot be a DNS name; the
+    # bounded scan skips it rather than feeding it to the backtracking pattern.
+    oversized = ("a" * 60 + ".") * 5 + "example"
+    assert len(oversized) > 253
+    assert find_indicators(oversized) == []
+    # A realistic hostname is unaffected.
+    assert find_indicators("beacon to sync-update.example now") == [
+        ("domain", "sync-update.example")
+    ]
+
+
+def test_document_file_names_are_not_promoted_to_domains() -> None:
+    # Office and data file names in free text look like domains to the pattern;
+    # the extension list rejects them. Extensions that are real TLDs (zip, py,
+    # sh, ...) are deliberately not rejected, so a genuine domain still extracts.
+    assert find_indicators("exfil staged in report.docx and notes.pdf") == []
+    assert find_indicators("manifest.json next to backup.yaml") == []
+    assert ("domain", "evil.zip") in find_indicators("fetched evil.zip from the c2")

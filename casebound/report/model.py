@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from casebound.enrich.cluster import Episode, cluster_events
@@ -43,6 +44,11 @@ __all__ = [
 
 # The narrative label shown when the deterministic no-model path is taken (FR26).
 NO_MODEL_LABEL = "none (deterministic report)"
+
+
+def _parse_instant(value: str) -> datetime:
+    """Parse a canonical UTC datetime string (trailing Z) into an aware instant."""
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 def verified_statement(asserts: ClaimAssertion) -> str:
@@ -197,7 +203,10 @@ def build_report_model(
     whether or not the caller pre-computed them. Pass ``verification`` as None for
     the deterministic no-model path (FR26).
     """
-    ordered = sorted(events, key=lambda e: (e.datetime, e.event_id))
+    # Sort on the parsed instant, not the string: the canonical form trims
+    # trailing zeros, so "...17.5Z" sorts before "...17Z" lexicographically while
+    # being chronologically later.
+    ordered = sorted(events, key=lambda e: (_parse_instant(e.datetime), e.event_id))
     prov = provenance or {}
 
     resolved_episodes = list(episodes) if episodes is not None else cluster_events(ordered).episodes

@@ -222,3 +222,31 @@ def test_scenario_clusters_sensibly(tmp_path: Path) -> None:
     assert len(server_episodes) == 1
     server_episode = next(ep for ep in result.episodes if ep.host == "WIN-FILE-02")
     assert server_episode.principal == "CORP\\svc-backup"
+
+
+def test_subsecond_events_order_chronologically_not_lexicographically() -> None:
+    # The canonical form trims trailing zeros, so "...17.5Z" sorts before
+    # "...17Z" as a string while being half a second later. Episode membership
+    # order, start, and end must follow the instants, not the strings.
+    base = _event(offset_seconds=17)
+    later = Event(
+        datetime="2026-03-14T09:00:17.5Z",
+        timestamp_raw="2026-03-14T09:00:17.5Z",
+        source_timezone="UTC",
+        timestamp_desc="logged",
+        message="half a second later",
+        action="network_connect",
+        source_tool="hayabusa",
+        source_artifact="Security.evtx",
+        raw_ref=RawRef(source_file="x.csv", record="sub"),
+        host="HOST-1",
+        principal="CORP\\jdoe",
+    )
+
+    # Present the later event first so a lexicographic sort would keep it first.
+    result = cluster_events([later, base])
+
+    [episode] = result.episodes
+    assert episode.start == base.datetime
+    assert episode.end == later.datetime
+    assert episode.event_ids == (base.event_id, later.event_id)

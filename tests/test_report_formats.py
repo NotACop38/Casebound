@@ -225,3 +225,34 @@ def test_writers_round_trip_to_disk(tmp_path: Path) -> None:
     )
     payload: dict[str, Any] = json.loads(json_path.read_text(encoding="utf-8"))
     assert payload["scenario"] == "office_intrusion"
+
+
+def test_report_timeline_orders_subsecond_events_chronologically(tmp_path: Path) -> None:
+    # The shared report model sorts on the parsed instant: the canonical form
+    # trims trailing zeros, so a plain string sort would put "...17.5Z" before
+    # "...17Z" while it is half a second later.
+    from casebound.normalize import RawRef
+    from casebound.report.model import build_report_model
+
+    def _stamped(stamp: str, record: str) -> Event:
+        return Event(
+            datetime=stamp,
+            timestamp_raw=stamp,
+            source_timezone="UTC",
+            timestamp_desc="logged",
+            message=f"event at {stamp}",
+            action="process_create",
+            source_tool="hayabusa",
+            source_artifact="Security.evtx",
+            raw_ref=RawRef(source_file="x.csv", record=record),
+            host="HOST-1",
+        )
+
+    whole = _stamped("2026-03-14T09:00:17Z", "1")
+    fractional = _stamped("2026-03-14T09:00:17.5Z", "2")
+
+    model = build_report_model([fractional, whole], None, scenario="subsecond-order")
+    assert [entry["event_id"] for entry in model.events] == [
+        whole.event_id,
+        fractional.event_id,
+    ]

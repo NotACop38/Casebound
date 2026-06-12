@@ -14,6 +14,8 @@ later if a real workflow needs the intermediates.
 
 from __future__ import annotations
 
+import csv
+import json
 import os
 from dataclasses import dataclass
 from enum import StrEnum
@@ -48,8 +50,25 @@ NAVIGATOR_LAYER_NAME = "attack_navigator_layer.json"
 METRICS_NAME = "metrics.json"
 
 
+def _print_version(value: bool) -> None:
+    """Eager --version callback: print the version and exit before any command."""
+    if value:
+        from casebound import __version__
+
+        typer.echo(__version__)
+        raise typer.Exit()
+
+
 @app.callback()
-def main() -> None:
+def main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        help="Print the Casebound version and exit.",
+        callback=_print_version,
+        is_eager=True,
+    ),
+) -> None:
     """Casebound: a verification-fenced DFIR investigation copilot."""
     # Present so the CLI is a command group with room for future subcommands.
 
@@ -62,6 +81,19 @@ def version() -> None:
     typer.echo(__version__)
 
 
+def _ensure_out_dir(out_dir: Path) -> None:
+    """Create the output directory, failing cleanly when the path is blocked.
+
+    A pre-existing file at the path (or a file on the way to it) would otherwise
+    surface as a raw traceback from ``mkdir`` deep inside the run.
+    """
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except (FileExistsError, NotADirectoryError) as exc:
+        typer.echo(f"error: --out-dir {out_dir} is not a usable directory: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+
 @app.command()
 def generate(
     out_dir: Path = typer.Option(
@@ -70,7 +102,7 @@ def generate(
         "-o",
         help="Directory to write the synthetic CSV and ground-truth label file into.",
     ),
-    seed: int = typer.Option(
+    seed: int | None = typer.Option(
         None,
         "--seed",
         "-s",
@@ -84,6 +116,7 @@ def generate(
     """
     from casebound.generate import DEFAULT_SEED, write_samples
 
+    _ensure_out_dir(out_dir)
     chosen = DEFAULT_SEED if seed is None else seed
     csv_path, ground_truth_path = write_samples(out_dir, seed=chosen)
     typer.echo(f"wrote {csv_path}")
@@ -287,6 +320,7 @@ def demo(
     """
     from casebound.narrate import OfflineDemoNarrator
 
+    _ensure_out_dir(out_dir)
     used_demo_narrator = False
     if no_model:
         result = run_demo(out_dir, model=None)
@@ -650,6 +684,8 @@ def report(
         typer.echo("error: --no-model and --allow-cloud contradict each other; pick one", err=True)
         raise typer.Exit(code=2)
 
+    _ensure_out_dir(out_dir)
+
     model: NarrativeModel | None = None
     if not no_model:
         try:
@@ -678,6 +714,12 @@ def report(
             typer.echo(f"  {ref.source_file}#{ref.record}: {problem.reason}", err=True)
         if len(exc.problems) > 3:
             typer.echo(f"  ... and {len(exc.problems) - 3} more row(s)", err=True)
+        raise typer.Exit(code=1) from exc
+    except (OSError, UnicodeDecodeError, csv.Error, json.JSONDecodeError) as exc:
+        # A file-level failure: a truncated or non-JSON Chainsaw export, a binary
+        # blob, an oversized CSV field. The per-row FR7 contract lives in the
+        # normalize layer; this turns whole-file failures into a clean error.
+        typer.echo(f"error: could not read {evidence} as {source.value}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
     typer.echo(f"ingested {evidence} as {source.value}: {result.event_count} event(s)")

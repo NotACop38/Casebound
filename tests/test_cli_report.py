@@ -331,3 +331,39 @@ def test_report_command_default_makes_no_network_call(
 
     assert result.exit_code == 0, result.output
     assert (out_dir / REPORT_HTML_NAME).exists()
+
+
+def test_report_command_unreadable_evidence_fails_cleanly(tmp_path: Path) -> None:
+    # A whole-file failure (a truncated or non-JSON Chainsaw export) must be a
+    # clean error, not a traceback. The per-row FR7 contract is unaffected.
+    broken = tmp_path / "truncated.json"
+    broken.write_text('{"detections": [', encoding="utf-8")
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["report", str(broken), "--source", "chainsaw", "--out-dir", str(tmp_path / "out")],
+    )
+
+    assert result.exit_code == 1
+    assert "could not read" in result.output
+
+
+def test_report_command_out_dir_blocked_by_a_file_fails_cleanly(tmp_path: Path) -> None:
+    blocker = tmp_path / "out"
+    blocker.write_text("a file, not a directory", encoding="utf-8")
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["report", str(HAYABUSA_CSV), "--source", "hayabusa", "--out-dir", str(blocker)],
+    )
+
+    assert result.exit_code == 2
+    assert "not a usable directory" in result.output
+
+
+def test_version_flag_prints_the_version() -> None:
+    from casebound import __version__
+
+    result = CliRunner().invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert __version__ in result.output

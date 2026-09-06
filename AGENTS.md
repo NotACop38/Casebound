@@ -1,6 +1,6 @@
 # AGENTS.md - Casebound
 
-This file is the operating contract for any coding agent working in this repository, whether Claude Code or Codex. Read it fully before doing anything. `docs/PRD.md` and `docs/ENGINEERING_CHECKLIST.md` are the source of truth for what to build and in what order; this file is how to build it.
+This file is the operating contract for coding agents in this repository. `docs/PRD.md` and `docs/ENGINEERING_CHECKLIST.md` define the product and build order. Start with the user's task and `git status --short --branch`; preserve unrelated work. Read supporting documents by the sections needed for the task, and reuse context already read unless it has changed.
 
 ## Prime directive
 
@@ -19,11 +19,11 @@ Never weaken, bypass, shortcut, or optimize away the verifier. If a change would
 ## How to work
 
 - Source of truth. Read `docs/PRD.md` and `docs/ENGINEERING_CHECKLIST.md` before any architectural decision. If a change would contradict them, stop and flag it rather than letting code drift.
-- One checklist step per session. Take the next unchecked step, complete it fully, meet its stated exit criteria, then tick the box and make one focused commit. Do not jump ahead or bundle unrelated steps.
+- For checklist implementation, work one step per session: take the next unchecked step, meet its exit criteria, then tick the box and make one focused commit. Do not jump ahead or bundle unrelated steps. A specific maintenance, review, or documentation request follows its own scope and does not require advancing the checklist.
 - Vertical slice first. The whole pipeline (ingest, normalize, enrich, verify, report) must work end to end on one source and one scenario before any breadth. De-risk the schema and the verifier on that slice.
 - Test-first for the verifier. Any change under `verify/` ships in the same commit with both a grounded-accept test and a fabricated-reject test. The hallucination-trap test must always pass.
-- Keep the gate green. Run `make ci` before committing. Never commit red.
-- Surface risk. If you see a better approach, a hidden assumption, or a trap, say so before proceeding. Do not silently paper over a problem.
+- Keep the gate green. Use targeted checks during work and run `make ci` before committing the completed change. Reuse a passing result while its checked inputs remain unchanged; rerun affected checks after further changes. Report failures or checks that could not run accurately.
+- Make routine, reversible engineering choices within the task and explain material assumptions or tradeoffs. Ask only when a missing decision or authorization changes the result and cannot be inferred; preserve the explicit approval boundaries below.
 - Re-verify external specifics at author time: ATT&CK technique ids, Timesketch field names, Dissect and other library APIs. These move; do not trust memory.
 
 ## Conventions
@@ -48,9 +48,9 @@ The agent owns the build surface. Keep these working as the project grows. Names
 
 ## Definition of Done
 
-Per step: the step’s exit criteria are met; `make ci` is green; new behavior has tests; the matching checklist box is ticked; one focused commit is made.
+For the requested task: its acceptance criteria are met, relevant verification passes, and the change is focused. For checklist implementation, also satisfy the step's exit criteria, test new behavior, and tick the matching box. Do not invent product work or a release to close out maintenance.
 
-Whole project: from a clean clone, `make demo` runs offline with no API keys and produces a self-contained HTML report whose every narrative claim links to a real event; the hallucination-rejection rate is 1.0 on the seeded set; the deterministic timeline, the ATT&CK heatmap, and the metrics regenerate; `make ci` is green; the defensive-scope invariants hold; the README sells the value in one screen; v0.1.0 is tagged.
+For an explicitly requested initial release: from a clean clone, `make demo` runs offline with no API keys and produces a self-contained HTML report whose every narrative claim links to a real event; the hallucination-rejection rate is 1.0 on the seeded set; the deterministic timeline, the ATT&CK heatmap, and the metrics regenerate; `make ci` is green; the defensive-scope invariants hold; the README sells the value in one screen; v0.1.0 is tagged.
 
 ## Stop and ask the human before
 
@@ -61,4 +61,4 @@ Whole project: from a clean clone, `make demo` runs offline with no API keys and
 - Changing the license posture.
 - Relaxing any Hard rule.
 
-When in doubt, ask.
+An explicit user instruction controls the current task. Do not ask again for authorization already provided.

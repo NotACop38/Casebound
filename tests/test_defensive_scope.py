@@ -14,17 +14,20 @@ outside the defensive scope:
     ``os.posix_spawn*``, ``os.startfile``, and the ``eval`` and ``exec`` builtins.
     The product never shells out and never executes a suspect binary.
   - Remote collection and network egress: ``socket`` plus the network-client and
-    remote-execution libraries (``urllib``, ``http.client``, ``ftplib``,
-    ``telnetlib``, ``smtplib``, ``requests``, ``httpx``, ``aiohttp``, ``paramiko``,
-    ``smbprotocol``, ``winrm``, ``wmi``, ``impacket``, ``pypsexec``). The only
-    sanctioned egress is the opt-in, redacted cloud provider SDK (``openai`` or
-    ``anthropic``), imported lazily by name in ``narrate/llm.py`` and never on a
-    default path. Raw sockets and direct HTTP clients are forbidden outright.
+    remote-execution libraries (``urllib`` except the pure string parser
+    ``urllib.parse``, ``urllib3``, ``http.client``, ``ftplib``, ``telnetlib``,
+    ``smtplib``, ``requests``, ``httpx``, ``httpx2``, ``aiohttp``, ``websockets``,
+    ``grpc``, ``pycurl``, ``paramiko``, ``smbprotocol``, ``winrm``, ``wmi``,
+    ``impacket``, ``pypsexec``). The only sanctioned egress is the opt-in, redacted
+    cloud provider SDK (``openai`` or ``anthropic``), imported lazily by name in
+    ``narrate/llm.py`` and never on a default path. Raw sockets and direct HTTP
+    clients are forbidden outright.
   - Endpoint modification and remediation: ``winreg`` (the live registry) and
     ``ctypes`` (native OS APIs). The product reads triage output; it never reaches
     out and touches a live endpoint.
 
-Scope: the scan covers ``casebound/`` only, the code that handles evidence. The
+Scope: the scan covers ``casebound/``, the code that handles evidence, including
+the optional web viewer (which serves on loopback and never fetches anything). The
 developer gate ``scripts/ci.py`` shells out to the pinned dev tools (ruff, mypy,
 pytest, bandit) and never to evidence, so it is intentionally outside this
 invariant. ``test_scanner_detects_forbidden_patterns`` proves the scanner has teeth
@@ -59,10 +62,16 @@ FORBIDDEN_MODULES: dict[str, str] = {
     "smtplib": "sends mail (egress)",
     "http.client": "opens HTTP connections (egress)",
     "urllib": "opens network connections (egress)",
+    "urllib3": "an HTTP client (egress)",
     "xmlrpc": "opens XML-RPC connections (egress)",
     "requests": "an HTTP client (egress)",
     "httpx": "an HTTP client (egress)",
+    "httpx2": "an HTTP client (egress)",
     "aiohttp": "an async HTTP client (egress)",
+    "websocket": "a WebSocket client (egress)",
+    "websockets": "a WebSocket client (egress)",
+    "grpc": "an RPC client (egress)",
+    "pycurl": "a libcurl client (egress)",
     "paramiko": "SSH remote execution and collection",
     "smbprotocol": "SMB remote collection",
     "winrm": "Windows Remote Management execution",
@@ -111,8 +120,16 @@ FORBIDDEN_OS_FUNCS: frozenset[str] = frozenset(
 FORBIDDEN_BUILTINS: frozenset[str] = frozenset({"eval", "exec"})
 
 
+# Submodules of a forbidden package that cannot open a connection, allowed by name.
+# urllib.parse only splits and quotes strings (the web viewer compares an Origin
+# header with it); urllib.request and urllib.robotparser stay forbidden.
+ALLOWED_SUBMODULES: frozenset[str] = frozenset({"urllib.parse"})
+
+
 def _forbidden_module(dotted: str) -> str | None:
     """Return the reason a dotted module name is forbidden, or None if it is allowed."""
+    if any(dotted == name or dotted.startswith(name + ".") for name in ALLOWED_SUBMODULES):
+        return None
     for name, reason in FORBIDDEN_MODULES.items():
         if dotted == name or dotted.startswith(name + "."):
             return reason
@@ -141,18 +158,16 @@ class _ScopeVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        # Each imported name is judged fully qualified, so "from urllib import
+        # parse" is the allowed parser while "from urllib import request" is not.
         module = node.module or ""
-        reason = _forbidden_module(module)
-        if reason is not None:
-            self._record(node.lineno, f"imports from '{module}' which {reason}")
-        else:
-            for alias in node.names:
-                qualified = f"{module}.{alias.name}" if module else alias.name
-                sub_reason = _forbidden_module(qualified)
-                if sub_reason is not None:
-                    self._record(node.lineno, f"imports '{qualified}' which {sub_reason}")
-                elif module == "os" and alias.name in FORBIDDEN_OS_FUNCS:
-                    self._record(node.lineno, f"imports 'os.{alias.name}' (process execution)")
+        for alias in node.names:
+            qualified = f"{module}.{alias.name}" if module else alias.name
+            reason = _forbidden_module(qualified)
+            if reason is not None:
+                self._record(node.lineno, f"imports '{qualified}' which {reason}")
+            elif module == "os" and alias.name in FORBIDDEN_OS_FUNCS:
+                self._record(node.lineno, f"imports 'os.{alias.name}' (process execution)")
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
@@ -218,3 +233,21 @@ def test_scanner_detects_forbidden_patterns() -> None:
     assert "os.system" in joined  # the from-import form
     assert "os.popen" in joined  # the attribute-call form
     assert "eval" in joined
+
+
+def test_only_the_pure_urllib_parser_is_allowed() -> None:
+    sample = (
+        "from urllib.parse import urlsplit\n"
+        "import urllib.parse\n"
+        "import urllib\n"
+        "import urllib.request\n"
+        "from urllib import robotparser\n"
+        "from urllib import parse\n"
+        "import urllib3\n"
+        "import httpx2\n"
+    )
+    visitor = _ScopeVisitor(PACKAGE_DIR / "synthetic_violation.py")
+    visitor.visit(ast.parse(sample))
+    flagged = {finding.split("'")[1] for finding in visitor.findings}
+    assert "urllib.parse" not in flagged
+    assert {"urllib", "urllib.request", "urllib.robotparser", "urllib3", "httpx2"} <= flagged

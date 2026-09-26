@@ -1,118 +1,137 @@
-"""Tests for the ATT&CK Navigator layer renderer (PRD FR31).
+"""Tests for the ATT&CK Navigator layer (PRD FR31).
 
 The load-bearing properties:
 
-  1. Real technique ids only: every observed id is validated against the ATT&CK
-     catalog; an unrecognized id is a hard error, never a silently emitted layer.
-  2. The catalog covers the scenario: every ground-truth technique label and every
-     id the deterministic tagger can emit is a real, named ATT&CK technique.
-  3. The layer is a deterministic heatmap: techniques are sorted and scored by event
-     count, and the committed sample regenerates byte-identically from a clean clone.
-
-All tests run offline with no API keys.
+  1. Shape: the layer is a Navigator layer-format 4.5 document for the Enterprise
+     domain, pinned to the bundled ATT&CK release, that the Navigator can load.
+  2. Content: each observed current technique is one scored entry whose score is
+     the number of events exhibiting it and whose comment is its ATT&CK name.
+  3. Robustness: an id that is not a current technique (unknown to the catalog, or
+     deprecated) never fails the run and never reaches the Navigator as an
+     unloadable cell; it is named in the description instead.
+  4. Determinism: the same events always render byte-identical JSON.
+  5. The committed sample layer is exactly what the demo regenerates.
 """
 
 from __future__ import annotations
 
 import json
-import re
-from dataclasses import replace
 from pathlib import Path
 
-from casebound.enrich.attack import MAPPING_TABLE, tag_events
-from casebound.generate import generate
-from casebound.generate.synth import CSV_FILENAME
+from casebound.enrich.attack import tag_events
+from casebound.enrich.catalog import load_catalog
+from casebound.generate.synth import write_samples
 from casebound.ingest import HayabusaAdapter
-from casebound.normalize import Event, normalize_records
+from casebound.normalize import Event, RawRef, normalize_records
 from casebound.normalize.schema import AttackTechnique
 from casebound.report.attack_layer import (
-    ATTACK_TECHNIQUES,
-    UnknownTechniqueError,
+    LAYER_VERSION,
     build_navigator_layer,
-    is_known_technique,
     render_navigator_layer,
+    technique_counts,
+    write_navigator_layer,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SAMPLE_LAYER = REPO_ROOT / "samples" / "attack_navigator_layer.json"
-_TECHNIQUE_RE = re.compile(r"^T\d{4}(?:\.\d{3})?$")
+ROOT = Path(__file__).resolve().parents[1]
 
 
-def _events(tmp_path: Path) -> list[Event]:
-    scenario = generate()
-    csv_path = tmp_path / CSV_FILENAME
-    csv_path.write_text(scenario.csv_text, encoding="utf-8")
+def _event(record: str, *technique_ids: str) -> Event:
+    return Event(
+        datetime="2026-03-14T08:42:17Z",
+        timestamp_raw="2026-03-14T08:42:17Z",
+        source_timezone="UTC",
+        timestamp_desc="logged",
+        message=f"synthetic event {record}",
+        action="process_create",
+        source_tool="hayabusa",
+        source_artifact="Security.evtx",
+        raw_ref=RawRef(source_file="x.csv", record=record),
+        attack_techniques=[AttackTechnique(tid, "rule_tag") for tid in technique_ids],
+    )
+
+
+def _scenario_events(tmp_path: Path) -> list[Event]:
+    csv_path, _ = write_samples(tmp_path)
     return tag_events(normalize_records(HayabusaAdapter().read(csv_path)).events)
 
 
-def test_catalog_ids_are_well_formed_technique_ids() -> None:
-    for tid in ATTACK_TECHNIQUES:
-        assert _TECHNIQUE_RE.match(tid), f"catalog id {tid!r} is not a technique id"
-        assert ATTACK_TECHNIQUES[tid], f"catalog id {tid!r} has no name"
-
-
-def test_catalog_covers_ground_truth_and_mapping_table() -> None:
-    # Every technique the scenario labels and every id the mapping table can assign
-    # must be a real, named ATT&CK technique in the catalog (FR31 validation).
-    ground_truth = generate().ground_truth
-    for tid in ground_truth["techniques"]:
-        assert is_known_technique(tid), f"ground-truth technique {tid} missing from catalog"
-    for rule in MAPPING_TABLE:
-        assert is_known_technique(rule.technique_id), f"mapping id {rule.technique_id} missing"
-
-
-def test_layer_scores_observed_techniques(tmp_path: Path) -> None:
-    events = _events(tmp_path)
-    layer = build_navigator_layer(events, scenario="office_intrusion")
-
+def test_layer_shape_is_loadable_by_the_navigator() -> None:
+    layer = build_navigator_layer([_event("1", "T1059.001")], name="unit")
+    catalog = load_catalog()
     assert layer["domain"] == "enterprise-attack"
-    ids = [tech["techniqueID"] for tech in layer["techniques"]]
-    # Sorted, deduplicated, and exactly the observed set.
-    assert ids == sorted(ids)
-    observed = {tech.technique_id for e in events for tech in e.attack_techniques}
-    assert set(ids) == observed
-    for tech in layer["techniques"]:
-        assert tech["score"] >= 1
-        assert tech["enabled"] is True
-        assert is_known_technique(tech["techniqueID"])
+    assert layer["versions"] == {
+        "attack": catalog.major_version,
+        "navigator": layer["versions"]["navigator"],
+        "layer": LAYER_VERSION,
+    }
+    assert layer["name"] == "Casebound: unit"
+    assert layer["gradient"]["minValue"] == 0
+    assert set(layer["techniques"][0]) == {"techniqueID", "score", "comment", "enabled"}
 
 
-def test_layer_drives_heatmap_by_score_not_manual_color(tmp_path: Path) -> None:
-    # A per-technique color would override the score-derived gradient in the
-    # Navigator, so every cell would read identically. The layer must omit it and
-    # let the score plus the gradient drive the heatmap.
-    events = _events(tmp_path)
-    layer = build_navigator_layer(events, scenario="office_intrusion")
-
-    assert "gradient" in layer
-    for tech in layer["techniques"]:
-        assert "color" not in tech
-        assert "score" in tech
-    # The ATT&CK content version is omitted so the layer loads against the
-    # Navigator's current ATT&CK matrix rather than a pinned, staleable number.
-    assert "attack" not in layer["versions"]
-    assert layer["versions"]["layer"]
-
-
-def test_unknown_technique_id_is_rejected(tmp_path: Path) -> None:
-    events = _events(tmp_path)
-    # Tamper one event with a well-formed but non-catalog id; the layer must refuse.
-    bogus = replace(events[0], attack_techniques=[AttackTechnique("T9999", "rule_tag")])
-    try:
-        build_navigator_layer([bogus], scenario="office_intrusion")
-    except UnknownTechniqueError as exc:
-        assert "T9999" in str(exc)
-    else:  # pragma: no cover - the call above must raise
-        raise AssertionError("expected UnknownTechniqueError for an unknown id")
+def test_scores_count_events_and_comments_name_the_technique() -> None:
+    events = [
+        _event("1", "T1059.001", "T1566.001"),
+        _event("2", "T1059.001"),
+        # A technique listed twice on one event still counts that event once.
+        _event("3", "T1003.001", "T1003.001"),
+    ]
+    layer = build_navigator_layer(events, name="unit")
+    by_id = {tech["techniqueID"]: tech for tech in layer["techniques"]}
+    assert {tid: tech["score"] for tid, tech in by_id.items()} == {
+        "T1003.001": 1,
+        "T1059.001": 2,
+        "T1566.001": 1,
+    }
+    assert by_id["T1059.001"]["comment"] == "Command and Scripting Interpreter: PowerShell"
+    assert layer["gradient"]["maxValue"] == 2
+    assert [tech["techniqueID"] for tech in layer["techniques"]] == sorted(by_id)
 
 
-def test_committed_sample_matches_the_generator(tmp_path: Path) -> None:
-    # The committed layer must equal a fresh default-seed generation, so a clean
-    # clone reproduces it and it never drifts silently.
-    events = _events(tmp_path)
-    rendered = render_navigator_layer(events, scenario="office_intrusion")
-    assert SAMPLE_LAYER.read_text(encoding="utf-8") == rendered
-    # And it is valid JSON with the expected shape.
-    layer = json.loads(rendered)
-    assert layer["name"] == "Casebound: office_intrusion"
-    assert layer["versions"]["layer"]
+def test_ids_that_are_not_current_techniques_are_left_out_and_named() -> None:
+    # T9999 is unknown to the catalog; T1070.001 was revoked in ATT&CK v19. Neither
+    # may reach the Navigator, and neither may fail the run.
+    layer = build_navigator_layer(
+        [_event("1", "T1059.001", "T9999"), _event("2", "T1070.001")], name="unit"
+    )
+    assert [tech["techniqueID"] for tech in layer["techniques"]] == ["T1059.001"]
+    assert "T9999" in layer["description"]
+    assert "T1070.001" in layer["description"]
+
+
+def test_a_case_without_techniques_still_yields_a_layer() -> None:
+    layer = build_navigator_layer([_event("1")], name="quiet")
+    assert layer["techniques"] == []
+    assert layer["gradient"]["maxValue"] == 1
+
+
+def test_technique_counts() -> None:
+    assert technique_counts([_event("1", "T1059.001"), _event("2", "T1059.001", "T1105")]) == {
+        "T1059.001": 2,
+        "T1105": 1,
+    }
+
+
+def test_rendering_is_deterministic_and_newline_terminated(tmp_path: Path) -> None:
+    events = _scenario_events(tmp_path)
+    first = render_navigator_layer(events, name="office_intrusion")
+    second = render_navigator_layer(list(reversed(events)), name="office_intrusion")
+    assert first == second
+    assert first.endswith("}\n")
+    written = write_navigator_layer(
+        tmp_path / "out" / "layer.json", events, name="office_intrusion"
+    )
+    assert written.read_text(encoding="utf-8") == first
+
+
+def test_scenario_layer_holds_every_labeled_technique(tmp_path: Path) -> None:
+    events = _scenario_events(tmp_path)
+    labels = json.loads((tmp_path / "ground_truth.json").read_text(encoding="utf-8"))
+    layer = build_navigator_layer(events, name="office_intrusion")
+    assert {tech["techniqueID"] for tech in layer["techniques"]} == set(labels["techniques"])
+
+
+def test_committed_sample_layer_matches_a_fresh_render(tmp_path: Path) -> None:
+    events = _scenario_events(tmp_path)
+    committed = (ROOT / "samples" / "attack_navigator_layer.json").read_text(encoding="utf-8")
+    assert committed == render_navigator_layer(events, name="office_intrusion")

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://casebound.dev/schema/event.schema.json",
+  "$id": "https://raw.githubusercontent.com/NotACop38/Casebound/main/casebound/data/event.schema.json",
   "title": "Casebound canonical event",
-  "description": "Canonical timeline event v0.1 (PRD Section 10). The validation source of truth, mirrored by casebound/normalize/schema.py. Every factual claim in a report must resolve to one of these events by event_id.",
+  "description": "Canonical timeline event, schema version 0.2 (PRD Section 10). The validation source of truth, mirrored by casebound/normalize/schema.py. Every factual claim in a report must resolve to one of these events by event_id.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -112,6 +112,11 @@
             "description": "How the mapping was made, for example rule_tag or mapping_table.",
             "type": "string",
             "minLength": 1
+          },
+          "source_id": {
+            "description": "Present only when the source wrote a technique id that ATT&CK has since revoked: the id as written, while technique_id carries its current successor.",
+            "type": "string",
+            "pattern": "^T\\d{4}(\\.\\d{3})?$"
           }
         }
       }

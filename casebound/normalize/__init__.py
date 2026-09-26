@@ -10,7 +10,7 @@ Layout (PRD Section 13):
   - ``mappers``  : per-source field mappers (Hayabusa is the first).
   - ``pipeline`` : raw records to de-duplicated canonical events.
 
-The validation source of truth is ``schema/event.schema.json``.
+The validation source of truth is ``casebound/data/event.schema.json``.
 """
 
 from __future__ import annotations

@@ -19,7 +19,7 @@ from typing import Any
 from casebound.ingest import PlasoAdapter
 from casebound.normalize import Event, NormalizationResult, normalize_records
 from casebound.normalize.mappers import DEFAULT_MAPPERS, PlasoMapper
-from casebound.normalize.mappers.plaso import parse_extra
+from casebound.normalize.mappers.plaso import evtx_channel, parse_extra
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 SLICE_CSV = FIXTURES / "plaso_l2t.csv"
@@ -60,12 +60,69 @@ def test_type_drives_descriptor_and_action() -> None:
     assert created.source_artifact == "NTFS $MFT"
     modified = by_object[(updater, "modified")]
     assert modified.action == "file_write"
-    # An Event Logged row becomes a logged event from the WinEVTX source.
+    # An Event Logged row from System.evtx resolves through the Windows EventID
+    # tables: System 7045 is a service install. The log file is where the record
+    # was stored, not its object, so it moves to details.
     logged = [e for e in events if e.timestamp_desc == "logged"]
     assert len(logged) == 1
-    assert logged[0].action == "logged"
+    assert logged[0].action == "service_install"
+    assert logged[0].object is None
+    assert logged[0].details["filename"] == "C:/Windows/System32/winevt/Logs/System.evtx"
     assert logged[0].details["MACB"] == "...."
     assert logged[0].details["extra"]["event_identifier"] == "7045"
+
+
+_HEADER = (
+    "date,time,timezone,MACB,source,sourcetype,type,user,host,short,desc,"
+    "version,filename,inode,notes,format,extra"
+)
+
+
+def _one_row(tmp_path: Path, row: str) -> Event:
+    path = tmp_path / "one.csv"
+    path.write_text(f"{_HEADER}\n{row}\n", encoding="utf-8")
+    result = _normalize(path)
+    assert result.event_count == 1
+    return result.events[0]
+
+
+def test_uncovered_evtx_event_id_stays_other(tmp_path: Path) -> None:
+    event = _one_row(
+        tmp_path,
+        "03/14/2026,09:00:00,UTC,....,EVT,WinEVTX,Event Logged,-,H,s,d,2,"
+        "C:/Windows/System32/winevt/Logs/Application.evtx,1,,winevtx,event_identifier: 1000",
+    )
+    assert event.action == "other"
+    assert event.object is None
+
+
+def test_sysmon_channel_is_read_from_the_escaped_file_name(tmp_path: Path) -> None:
+    event = _one_row(
+        tmp_path,
+        "03/14/2026,09:00:00,UTC,....,EVT,WinEVTX,Event Logged,-,H,s,d,2,"
+        "C:/Windows/System32/winevt/Logs/Microsoft-Windows-Sysmon%4Operational.evtx,1,,"
+        "winevtx,event_identifier: 1",
+    )
+    assert event.action == "process_create"
+
+
+def test_logged_row_from_a_non_evtx_file_keeps_its_object(tmp_path: Path) -> None:
+    event = _one_row(
+        tmp_path,
+        "03/14/2026,09:00:00,UTC,....,LOG,Syslog,Event Logged,-,H,s,d,2,/var/log/syslog,1,,syslog,",
+    )
+    assert event.action == "other"
+    assert event.object == "/var/log/syslog"
+
+
+def test_evtx_channel_names() -> None:
+    assert evtx_channel("C:\\Windows\\System32\\winevt\\Logs\\Security.evtx") == "Security"
+    assert (
+        evtx_channel("Microsoft-Windows-TaskScheduler%4Operational.EVTX")
+        == "Microsoft-Windows-TaskScheduler/Operational"
+    )
+    assert evtx_channel("/var/log/syslog") is None
+    assert evtx_channel(None) is None
 
 
 def test_unknown_user_placeholder_is_null() -> None:

@@ -70,7 +70,7 @@
       "tags": []
     },
     {
-      "event_id": "791bf313f9092825aef9b8361f3bd80f1a2b7348f1488918e3f4d86374f37b64",
+      "event_id": "fa9ecd26b0b95d655c2472e1a5f3c3490d8df6ab01e1a644902c4859bed18f1f",
       "datetime": "2026-03-14T08:56:40Z",
       "timestamp_raw": "03/14/2026 08:56:40",
       "source_timezone": "UTC",
@@ -78,8 +78,8 @@
       "message": "A service was installed in the system: WinHelpSvc",
       "host": "WIN-FILE-02",
       "principal": null,
-      "action": "logged",
-      "object": "C:/Windows/System32/winevt/Logs/System.evtx",
+      "action": "service_install",
+      "object": null,
       "source_tool": "plaso",
       "source_artifact": "WinEVTX",
       "details": {
@@ -92,7 +92,8 @@
         "extra": {
           "event_identifier": "7045",
           "record_number": "80492"
-        }
+        },
+        "filename": "C:/Windows/System32/winevt/Logs/System.evtx"
       },
       "attack_techniques": [],
       "ioc_refs": [],

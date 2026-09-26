@@ -1,49 +1,49 @@
-"""Map Hayabusa csv-timeline rows to canonical events (PRD FR2, FR8 to FR11).
+"""Map Hayabusa timeline rows to canonical events (PRD FR2, FR8 to FR11).
 
-Hayabusa rows describe Windows event-log records. This mapper reads the columns
-the Hayabusa adapter emits and derives the canonical fields:
+Hayabusa rows describe Windows event-log records that a detection rule matched.
+This mapper reads what the Hayabusa adapter emits (from a CSV or a JSON/JSONL
+timeline, any built-in output profile) and derives the canonical fields.
 
-  - ``datetime`` and ``source_timezone`` come from the Timestamp column via the
-    timezone normalizer (FR9); ``timestamp_raw`` keeps the original string.
-  - ``action``, ``principal``, and ``object`` are derived from the Windows channel
-    and event id through the shared ``winevent`` table, reading the relevant keys
-    out of the Details field. An event id the table does not cover still produces
-    an event (a generic ``other`` action at reduced confidence) rather than being
-    dropped, so the timeline stays complete (FR8).
-  - ``message`` is the Hayabusa rule title, the most human-readable summary on the
-    row.
-  - ``details`` preserves the source specifics: the Windows event id, channel,
-    level, rule title, the parsed Details key/value pairs, and the raw MITRE
-    tactic and rule-tag strings. The raw rule tags are kept here, not promoted to
-    ``attack_techniques``, because deterministic ATT&CK tagging is a later step;
-    this step does not decide techniques.
-  - ``raw_ref`` is carried straight through from the record's provenance (FR11).
+Hayabusa output is compact by design, and a faithful mapping has to undo that:
 
-The EventID to canonical-field rule lives in ``winevent`` so every Windows
-event-log source (Hayabusa, Chainsaw, Velociraptor, the Dissect raw EVTX adapter)
-maps the same events identically. The ``event_id`` is then derived by ``Event``
-from the core fields, so identical observations collapse to one id and the
-normalize pipeline can de-duplicate them while keeping every provenance pointer
-(FR10, FR12).
+  - Channels are abbreviated by default (``Sec``, ``Sys``, ``Sysmon``, ``PwSh``,
+    ``TaskSch``, and so on); ``HAYABUSA_CHANNELS`` restores the full channel name,
+    which selects the EventID table and names the source artifact.
+  - The ``Details`` column labels fields with per-rule abbreviations (``Proc``,
+    ``TgtUser``, ``SrcIP``). The same abbreviation means different fields on
+    different events (``Proc`` is ``NewProcessName`` on Security 4688 but ``Image``
+    on Sysmon 1), so ``HAYABUSA_FIELD_ALIASES`` is keyed by (channel, EventID). Its
+    spellings were extracted from the Hayabusa rule set's ``details`` templates and
+    its ``default_details.txt`` at author time.
+  - ``ExtraFieldInfo`` (standard and verbose profiles) lists, under their original
+    names, the record fields whose values Details did not show, and
+    ``AllFieldInfo`` (all-field-info profiles) lists every field. Both are merged
+    in, so for example the ``SubjectDomainName`` a 4688 Details template omits is
+    recovered and the principal reads ``CORP\\jdoe`` rather than ``jdoe``.
 
-Input assumption: the Detail keys are expected in their unabbreviated Windows
-form (``SubjectUserName``, ``TargetUserName``, ``DestinationIp``, and so on), which
-is what the synthetic generator emits and what Hayabusa produces with
-``--disable-abbreviations``. Hayabusa abbreviates field names by default, so until
-an abbreviation-normalization pass lands, evidence from a default Hayabusa run
-should be generated with abbreviations disabled or the principal and object may be
-incomplete. Handling the default abbreviations is a Phase 3 breadth follow-up.
+From the resulting EventData the shared ``winevent`` table derives ``action``,
+``principal``, and ``object``, so a Hayabusa row maps exactly like the same event
+seen through Chainsaw, Velociraptor, or raw EVTX. An EventID the table does not
+cover still produces an event (a generic ``other`` action at reduced confidence).
+``message`` is the rule title. ``details`` keeps the EventID, channel, level, rule
+title and file, the de-abbreviated fields, and the raw MITRE tactic, technique, and
+other tags; techniques are decided later by the tagger, not here.
 
 Style: no em dashes or en dashes anywhere (PRD Section 15).
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from casebound.normalize.mappers.base import Mapper, MappingError
 from casebound.normalize.mappers.winevent import (
+    CHANNEL_SECURITY,
+    CHANNEL_SYSMON,
+    CHANNEL_SYSTEM,
+    CHANNEL_TASKSCHEDULER,
     FALLBACK_ACTION,
     FALLBACK_CONFIDENCE,
     MAPPED_CONFIDENCE,
@@ -60,28 +60,206 @@ if TYPE_CHECKING:
     # Annotation-only: keeps normalize free of a runtime dependency on ingest.
     from casebound.ingest.base import RawRecord
 
-__all__ = ["HayabusaMapper", "parse_details"]
+__all__ = [
+    "HAYABUSA_CHANNELS",
+    "HAYABUSA_FIELD_ALIASES",
+    "HayabusaMapper",
+    "expand_channel",
+    "parse_details",
+    "resolve_fields",
+]
 
 # Hayabusa's multi-value separator is a space-padded broken bar (U+00A6). Splitting
 # on the bar itself and stripping is robust to the exact spacing a profile uses.
 _FIELD_SEP = "¦"
 
-# How a row whose timestamp has no offset is labeled by default: the Hayabusa
-# csv-timeline profile prints an explicit offset, so None means trust that offset.
-# A caller can pass an IANA zone to relabel instead (see normalize_timestamp).
+# What Hayabusa prints in Details for a template field the record does not have.
+_TEMPLATE_MISSING = "n/a"
+
+# Hayabusa's channel abbreviations (hayabusa-rules config/channel_abbreviations.txt),
+# mapped back to the full channel name. Abbreviations Hayabusa shares between
+# several logs (AppLocker, SecMitig) are left as written, since the exact log
+# cannot be recovered from the abbreviation alone.
+HAYABUSA_CHANNELS: dict[str, str] = {
+    "App": "Application",
+    "BitsCli": "Microsoft-Windows-Bits-Client/Operational",
+    "CodeInteg": "Microsoft-Windows-CodeIntegrity/Operational",
+    "Defender": "Microsoft-Windows-Windows Defender/Operational",
+    "DHCP-Svr": "Microsoft-Windows-DHCP-Server/Operational",
+    "DNS-Svr": "DNS Server",
+    "DvrFmwk": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+    "Exchange": "MSExchange Management",
+    "Firewall": "Microsoft-Windows-Windows Firewall With Advanced Security/Firewall",
+    "Forwarding": "Microsoft-Windows-Forwarding/Operational",
+    "GroupPolicy": "Microsoft-Windows-GroupPolicy/Operational",
+    "KeyMgtSvc": "Key Management Service",
+    "LDAP-Cli": "Microsoft-Windows-LDAP-Client/Debug",
+    "NTLM": "Microsoft-Windows-NTLM/Operational",
+    "OpenSSH": "OpenSSH/Operational",
+    "PrintAdm": "Microsoft-Windows-PrintService/Admin",
+    "PrintOp": "Microsoft-Windows-PrintService/Operational",
+    "PwSh": "Microsoft-Windows-PowerShell/Operational",
+    "PwShClassic": "Windows PowerShell",
+    "PwShCore": "PowerShellCore",
+    "RDP-Cli": "Microsoft-Windows-TerminalServices-RDPClient/Operational",
+    "RDP-CoreTS": "Microsoft-Windows-RemoteDesktopServices-RdpCoreTS/Operational",
+    "RDS-GTW": "Microsoft-Windows-TerminalServices-Gateway/Operational",
+    "RDS-LSM": "Microsoft-Windows-TerminalServices-LocalSessionManager/Operational",
+    "RDS-RCM": "Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational",
+    "Sec": CHANNEL_SECURITY,
+    "SmbCliSec": "Microsoft-Windows-SmbClient/Security",
+    "SvcBusCli": "Microsoft-ServiceBus-Client",
+    "Sys": CHANNEL_SYSTEM,
+    "Sysmon": CHANNEL_SYSMON,
+    "TaskSch": CHANNEL_TASKSCHEDULER,
+    "WinRM": "Microsoft-Windows-WinRM/Operational",
+    "WMI": "Microsoft-Windows-WMI-Activity/Operational",
+}
+
+# Hayabusa's Details abbreviations for the events the shared winevent table maps,
+# per (full channel, EventID): abbreviation -> original EventData field name. A key
+# absent here is already an original name (a --disable-abbreviations run, or a
+# template that uses the field name itself) and passes through unchanged.
+_SYSMON_PROCESS = {"Proc": "Image", "PID": "ProcessId", "PGUID": "ProcessGuid", "Rule": "RuleName"}
+HAYABUSA_FIELD_ALIASES: dict[tuple[str, int], dict[str, str]] = {
+    (CHANNEL_SECURITY, 1102): {"User": "SubjectUserName"},
+    (CHANNEL_SECURITY, 4624): {
+        "Type": "LogonType",
+        "TgtUser": "TargetUserName",
+        "SrcComp": "WorkstationName",
+        "SrcIP": "IpAddress",
+        "LID": "TargetLogonId",
+    },
+    (CHANNEL_SECURITY, 4625): {
+        "Type": "LogonType",
+        "TgtUser": "TargetUserName",
+        "SrcComp": "WorkstationName",
+        "SrcIP": "IpAddress",
+        "AuthPkg": "AuthenticationPackageName",
+        "Proc": "ProcessName",
+    },
+    (CHANNEL_SECURITY, 4688): {
+        "Cmdline": "CommandLine",
+        "Proc": "NewProcessName",
+        "PID": "NewProcessId",
+        "User": "SubjectUserName",
+        "LID": "SubjectLogonId",
+    },
+    (CHANNEL_SECURITY, 4697): {
+        "Svc": "ServiceName",
+        "Path": "ServiceFileName",
+        "User": "SubjectUserName",
+        "SvcAcct": "ServiceAccount",
+        "SvcType": "ServiceType",
+        "SvcStartType": "ServiceStartType",
+        "LID": "SubjectLogonId",
+    },
+    (CHANNEL_SECURITY, 4698): {
+        "Name": "TaskName",
+        "Content": "TaskContent",
+        "User": "SubjectUserName",
+        "LID": "SubjectLogonId",
+    },
+    (CHANNEL_SECURITY, 4720): {"TgtUser": "TargetUserName", "TgtSID": "TargetSid"},
+    (CHANNEL_SECURITY, 5140): {
+        "SrcUser": "SubjectUserName",
+        "SharePath": "ShareLocalPath",
+        "SrcIP": "IpAddress",
+        "LID": "SubjectLogonId",
+    },
+    (CHANNEL_SECURITY, 5145): {
+        "SrcUser": "SubjectUserName",
+        "SharePath": "ShareLocalPath",
+        "Path": "RelativeTargetName",
+        "SrcIP": "IpAddress",
+        "LID": "SubjectLogonId",
+    },
+    (CHANNEL_SYSTEM, 104): {"Log": "Channel", "User": "SubjectUserName"},
+    (CHANNEL_SYSTEM, 7040): {"OldSetting": "param2", "NewSetting": "param3"},
+    (CHANNEL_SYSTEM, 7045): {
+        "Svc": "ServiceName",
+        "Path": "ImagePath",
+        "Acct": "AccountName",
+    },
+    (CHANNEL_SYSMON, 1): {
+        **_SYSMON_PROCESS,
+        "Cmdline": "CommandLine",
+        "ParentCmdline": "ParentCommandLine",
+        "LID": "LogonId",
+        "LGUID": "LogonGuid",
+        "ParentPID": "ParentProcessId",
+        "ParentPGUID": "ParentProcessGuid",
+    },
+    (CHANNEL_SYSMON, 3): {
+        **_SYSMON_PROCESS,
+        "Proto": "Protocol",
+        "SrcIP": "SourceIp",
+        "SrcPort": "SourcePort",
+        "SrcHost": "SourceHostname",
+        "TgtIP": "DestinationIp",
+        "TgtPort": "DestinationPort",
+        "TgtHost": "DestinationHostname",
+    },
+    (CHANNEL_SYSMON, 8): {
+        "SrcProc": "SourceImage",
+        "TgtProc": "TargetImage",
+        "SrcPID": "SourceProcessId",
+        "SrcPGUID": "SourceProcessGuid",
+        "TgtPID": "TargetProcessId",
+        "TgtPGUID": "TargetProcessGuid",
+        "Rule": "RuleName",
+    },
+    (CHANNEL_SYSMON, 10): {
+        "SrcProc": "SourceImage",
+        "TgtProc": "TargetImage",
+        "SrcUser": "SourceUser",
+        "TgtUser": "TargetUser",
+        "Access": "GrantedAccess",
+        "SrcPID": "SourceProcessId",
+        "SrcPGUID": "SourceProcessGUID",
+        "TgtPID": "TargetProcessId",
+        "TgtPGUID": "TargetProcessGUID",
+        "Rule": "RuleName",
+    },
+    (CHANNEL_SYSMON, 11): {**_SYSMON_PROCESS, "Path": "TargetFilename"},
+    (CHANNEL_SYSMON, 13): {**_SYSMON_PROCESS, "RegKey": "TargetObject", "TgtObj": "TargetObject"},
+    (CHANNEL_SYSMON, 22): {**_SYSMON_PROCESS, "Query": "QueryName", "Result": "QueryResults"},
+    (CHANNEL_SYSMON, 23): {**_SYSMON_PROCESS, "Path": "TargetFilename"},
+    (CHANNEL_SYSMON, 26): {**_SYSMON_PROCESS, "Path": "TargetFilename"},
+    (CHANNEL_TASKSCHEDULER, 106): {"Name": "TaskName"},
+}
+
+# How a row whose timestamp has no offset is labeled by default: Hayabusa prints an
+# explicit offset (or Z), so None means trust it. A caller can pass an IANA zone to
+# relabel instead (see normalize_timestamp).
 _DEFAULT_ASSUME_TZ: str | None = None
 
 
-def parse_details(raw: str) -> dict[str, str]:
-    """Parse a Hayabusa Details cell into an ordered key/value mapping.
+def expand_channel(channel: str) -> str:
+    """Return the full channel name for a Hayabusa channel abbreviation."""
+    stripped = channel.strip()
+    return HAYABUSA_CHANNELS.get(stripped, stripped)
 
-    The cell joins ``Key: Value`` pairs with the broken-bar separator. Each pair is
-    split on its first colon, so a value that itself contains a colon (a Windows
-    path such as ``C:\\Windows``) is preserved intact. A fragment with no colon is
+
+def parse_details(raw: str) -> dict[str, str]:
+    """Parse a Hayabusa ``Key: Value ¦ Key: Value`` cell into an ordered mapping.
+
+    Also accepts the JSON object form the adapter writes for a JSON or JSONL
+    timeline. Each pair is split on its first colon, so a value that itself
+    contains a colon (a Windows path such as ``C:\\Windows``) is preserved intact.
+    A fragment with no colon, and the ``-`` Hayabusa writes for an empty column, are
     skipped rather than guessed at.
     """
+    text = raw.strip()
+    if text.startswith("{"):
+        try:
+            decoded = json.loads(text)
+        except json.JSONDecodeError:
+            decoded = None
+        if isinstance(decoded, dict):
+            return {str(key): _scalar(value) for key, value in decoded.items()}
     fields: dict[str, str] = {}
-    for fragment in raw.split(_FIELD_SEP):
+    for fragment in text.split(_FIELD_SEP):
         key, sep, value = fragment.partition(":")
         if not sep:
             continue
@@ -91,13 +269,53 @@ def parse_details(raw: str) -> dict[str, str]:
     return fields
 
 
+def _scalar(value: Any) -> str:
+    """Render one JSON field value as the string a CSV cell would have carried."""
+    if isinstance(value, list):
+        return " ".join(_scalar(item) for item in value)
+    if value is None:
+        return ""
+    return str(value)
+
+
+def resolve_fields(channel: str, event_id: int | str, data: Mapping[str, str]) -> dict[str, str]:
+    """Rebuild a record's EventData under original field names.
+
+    ``AllFieldInfo`` (when present) is the complete set; the de-abbreviated
+    ``Details`` pairs come next; ``ExtraFieldInfo`` fills in what Details left
+    out. An earlier source wins on a conflicting key, so the full-name profiles
+    are authoritative and an abbreviation can never shadow a real field. A Details
+    value of ``n/a`` (a template field the record lacks) is dropped.
+    """
+    aliases = (
+        HAYABUSA_FIELD_ALIASES.get((channel, event_id), {}) if isinstance(event_id, int) else {}
+    )
+    fields: dict[str, str] = dict(parse_details(data.get("AllFieldInfo", "")))
+    for key, value in parse_details(data.get("Details", "")).items():
+        # "n/a" is Hayabusa's own marker for a template field the record lacks, so
+        # the field is absent rather than present with that value.
+        if value != _TEMPLATE_MISSING:
+            fields.setdefault(aliases.get(key, key), value)
+    for key, value in parse_details(data.get("ExtraFieldInfo", "")).items():
+        fields.setdefault(key, value)
+    return fields
+
+
 def _split_multi(raw: str) -> list[str]:
     """Split a Hayabusa multi-value cell into its non-empty, stripped values."""
-    return [piece.strip() for piece in raw.split(_FIELD_SEP) if piece.strip()]
+    text = raw.strip()
+    if text.startswith("["):
+        try:
+            decoded = json.loads(text)
+        except json.JSONDecodeError:
+            decoded = None
+        if isinstance(decoded, list):
+            return [str(item).strip() for item in decoded if str(item).strip()]
+    return [piece.strip() for piece in text.split(_FIELD_SEP) if piece.strip() not in ("", "-")]
 
 
 class HayabusaMapper(Mapper):
-    """Map Hayabusa csv-timeline records into canonical events."""
+    """Map Hayabusa timeline records into canonical events."""
 
     source_tool: ClassVar[str] = "hayabusa"
 
@@ -115,15 +333,14 @@ class HayabusaMapper(Mapper):
         except TimestampError as exc:
             raise MappingError(str(exc)) from exc
 
-        channel = (data.get("Channel") or "").strip()
+        channel = expand_channel(data.get("Channel") or "")
         win_event_id = coerce_event_id(data.get("EventID", ""))
-        fields = parse_details(data.get("Details", ""))
+        fields = resolve_fields(channel, win_event_id, data)
         mapping = mapping_for(channel, win_event_id)
 
         action = mapping.action if mapping is not None else FALLBACK_ACTION
         confidence = MAPPED_CONFIDENCE if mapping is not None else FALLBACK_CONFIDENCE
         host = nullable(data.get("Computer"))
-        message = self._message(data, channel, win_event_id, host)
 
         try:
             return Event(
@@ -131,7 +348,7 @@ class HayabusaMapper(Mapper):
                 timestamp_raw=stamp.timestamp_raw,
                 source_timezone=stamp.source_timezone,
                 timestamp_desc="logged",
-                message=message,
+                message=self._message(data, channel, win_event_id, host),
                 action=action,
                 source_tool=record.source_tool,
                 source_artifact=record.source_artifact,
@@ -167,18 +384,25 @@ class HayabusaMapper(Mapper):
             "channel": channel,
             "fields": dict(fields),
         }
-        level = nullable(data.get("Level"))
-        if level is not None:
-            details["level"] = level
-        rule_title = nullable(data.get("RuleTitle"))
-        if rule_title is not None:
-            details["rule_title"] = rule_title
+        for column, key in (
+            ("Level", "level"),
+            ("RuleTitle", "rule_title"),
+            ("RuleFile", "rule_file"),
+            ("RuleID", "rule_id"),
+            ("Provider", "provider"),
+        ):
+            value = nullable(data.get(column))
+            if value is not None:
+                details[key] = value
         tactics = _split_multi(data.get("MitreTactics", ""))
         if tactics:
             details["mitre_tactics"] = tactics
-        # Raw rule tags are preserved for the later ATT&CK step; this step does not
-        # promote them to attack_techniques.
+        # Raw technique tags are kept for the tagger (enrich.attack), which alone
+        # decides techniques; group and software ids are filtered out there.
         rule_tags = _split_multi(data.get("MitreTags", ""))
         if rule_tags:
             details["rule_mitre_tags"] = rule_tags
+        other_tags = _split_multi(data.get("OtherTags", ""))
+        if other_tags:
+            details["other_tags"] = other_tags
         return details

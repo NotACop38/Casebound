@@ -19,6 +19,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from casebound.enrich.catalog import load_catalog
 from casebound.generate import write_samples
 from casebound.generate.scenarios import REQUIRED_STAGES
 from casebound.generate.synth import (
@@ -47,7 +48,8 @@ def _parse_csv(csv_text: str) -> list[dict[str, str]]:
 
 
 def _tags(cell: str) -> list[str]:
-    return [t for t in cell.split(HAYABUSA_SEP) if t]
+    # Hayabusa writes "-" for an empty column.
+    return [t for t in cell.split(HAYABUSA_SEP) if t and t != "-"]
 
 
 # 1. Determinism.
@@ -133,7 +135,23 @@ def test_every_label_maps_to_a_consistent_csv_row() -> None:
         assert row is not None, f"record {event['record_id']} missing from CSV"
         assert row["Computer"] == event["computer"]
         assert row["RuleTitle"] == event["rule_title"]
-        assert set(_tags(row["MitreTags"])) == set(event["technique_ids"])
+        # The row carries the rule's own tags, which may name a technique MITRE has
+        # since revoked; the label carries the current id those tags resolve to.
+        assert _tags(row["MitreTags"]) == event["rule_tags"]
+        catalog = load_catalog()
+        resolved = [catalog.resolve(tid).technique_id for tid in event["rule_tags"]]
+        assert set(resolved) <= set(event["technique_ids"])
+
+
+def test_log_clear_rule_tag_is_the_revoked_id_and_the_label_its_successor() -> None:
+    # Detection rules written before ATT&CK v19 still tag Clear Windows Event Logs
+    # as T1070.001; the scenario keeps that realism so the tagger's translation to
+    # T1685.005 is exercised end to end.
+    labels = {e["label_id"]: e for e in generate().ground_truth["events"]}
+    clear = next(e for e in labels.values() if e["action"] == "log_clear")
+    assert clear["rule_tags"] == ["T1070.001"]
+    assert clear["technique_ids"] == ["T1685.005"]
+    assert load_catalog().resolve("T1070.001").technique_id == "T1685.005"
 
 
 def test_tagged_csv_rows_are_exactly_the_labeled_events() -> None:
@@ -155,7 +173,8 @@ def test_spliced_hash_appears_in_both_csv_and_iocs() -> None:
     result = generate()
     hashes = result.ground_truth["iocs"]["hashes"]
     # At least one synthetic hash is spliced into the evidence and recorded as IOC.
-    assert any(h in result.csv_text for h in hashes)
+    # Sysmon renders hashes in upper case, as the real product does.
+    assert any(h.upper() in result.csv_text for h in hashes)
 
 
 # 3. Everything shipped is synthetic and safe (Hard rule 3).

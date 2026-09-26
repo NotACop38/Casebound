@@ -116,8 +116,9 @@ A claim is accepted if and only if all of these hold, checked in this order:
    event must back the whole claim, which prevents stitching one event's
    principal onto another event's action. Other cited events are kept as context.
 
-When no cited event backs every fact, the claim is rejected with the first field
-that fails, in the order `datetime`, `principal`, `action`, `object`.
+When no cited event backs every fact, the rejection reason is the first failing
+field of the first cited event, with fields checked in the order `datetime`,
+`principal`, `action`, `object`.
 
 ### Per-field comparison
 

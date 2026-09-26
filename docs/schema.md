@@ -19,7 +19,7 @@ be `null`; arrays and objects may be empty.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `event_id` | string, 64 hex | SHA-256 content hash of the core fields. Always derived, never authored (see "Identity"). |
-| `datetime` | string | The instant in UTC, ISO 8601 with a trailing `Z`, for example `2026-03-14T08:42:17Z`. Sub-second precision is kept. |
+| `datetime` | string | The instant in UTC, ISO 8601 with a trailing `Z`, for example `2026-03-14T08:42:17Z`. Sub-second precision is kept to the microsecond; finer digits are truncated. |
 | `timestamp_raw` | string | The timestamp exactly as the source wrote it. |
 | `source_timezone` | string | How `datetime` was derived: an IANA zone (`America/New_York`), `UTC`, the fixed offset the source printed (`UTC-04:00`), or `assumed_utc` when the source gave no zone. |
 | `timestamp_desc` | string | How the time relates to the event: `created`, `modified`, `accessed`, `logged`, or `other` (Timesketch's convention). |
@@ -55,17 +55,20 @@ Each entry of `attack_techniques` records a technique and how it was assigned:
 
 ## Identity
 
-`event_id` is the SHA-256 hex digest of a canonical encoding of these core fields,
-in this order, prefixed with the fixed namespace `casebound-event-v0.1`:
+`event_id` is derived from these eight core fields (`CORE_ID_FIELDS`):
 
 ```
 datetime, timestamp_desc, host, principal, action, object, source_tool, source_artifact
 ```
 
-A `null` field hashes like an empty string. `datetime` is canonicalized first: it
-is parsed to a real instant and rendered in one form with trailing sub-second zeros
-trimmed, so `08:42:17Z` and `08:42:17.000Z` share an id while `08:42:17.5Z` does
-not. An impossible calendar instant is rejected.
+It is the SHA-256 hex digest of the UTF-8 bytes of the compact JSON array
+`["casebound-event-v0.1", {...}]`, where the object maps each core field name to
+its value with keys sorted, separators `,` and `:`, and non-ASCII characters left
+unescaped (`compute_event_id` in `casebound/normalize/schema.py`). A `null` field
+hashes like an empty string. `datetime` is canonicalized first: it is parsed to a
+real instant and rendered in one form with trailing sub-second zeros trimmed, so
+`08:42:17Z` and `08:42:17.000Z` share an id while `08:42:17.5Z` does not. An
+impossible calendar instant, such as February 30, is rejected.
 
 Consequences the verifier relies on:
 

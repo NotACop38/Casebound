@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from casebound.ingest import HayabusaAdapter, RawRecord, channel_to_artifact
 from casebound.normalize import (
     Event,

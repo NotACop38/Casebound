@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from casebound.ingest import ColumnMap, GenericCsvAdapter
 from casebound.normalize import Event, NormalizationResult, normalize_records
 from casebound.normalize.mappers import DEFAULT_MAPPERS, GenericCsvMapper

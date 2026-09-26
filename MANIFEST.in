@@ -1,38 +1,30 @@
-# Source distribution contents. The wheel ships only the casebound package (see
-# [tool.setuptools.packages.find] in pyproject.toml); the sdist additionally
-# carries a coherent, self-testable source snapshot. Style: no em dashes or en
-# dashes anywhere.
+# Source distribution contents. The wheel ships only the casebound package, with
+# its schemas, ATT&CK catalog, and templates as package data (pyproject.toml); the
+# sdist additionally carries a self-testable source snapshot. Style: no em dashes
+# or en dashes anywhere.
 
 include LICENSE
 include README.md
 include CHANGELOG.md
 include CONTRIBUTING.md
 include SECURITY.md
+include AGENTS.md
+include CLAUDE.md
 include Makefile
+include .env.example
 
-# The validation source of truth and its worked examples, referenced by the tests
-# and the CI gate.
-graft schema
+# The documentation, including the worked schema examples the gate validates.
+graft docs
 
-# The bundled synthetic samples the demo, the metrics, and several tests compare
-# against. Fully synthetic and safe (see samples/README.md), no real data.
+# The bundled synthetic samples. Fully synthetic and safe (see samples/README.md).
 graft samples
 
-# The test suite plus its fixtures and golden files, so the shipped tests run from
-# an unpacked sdist.
+# The test suite with its fixtures and golden files, so the tests run from an
+# unpacked sdist.
 graft tests
 
-# The optional web viewer. It is not part of the wheel (only casebound* packages
-# are), but the sdist must carry it: tests/test_web.py imports it whenever the
-# dev extra's fastapi is installed, so without it an unpacked sdist's 'make ci'
-# goes red, and 'make web' from a source tree needs the package present.
-graft web
-
-# The offline CI gate, so 'make ci' works from an unpacked sdist.
+# The offline gate and the catalog builder, so 'make ci' works from an sdist.
 graft scripts
-
-# The documented environment template the README and docs reference.
-include .env.example
 
 # Never ship caches, compiled artifacts, or build output.
 global-exclude *.py[cod]

@@ -28,9 +28,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 import casebound.ingest.raw.evtx as evtx_mod
 import casebound.ingest.raw.mft as mft_mod
-import pytest
 from casebound.ingest.base import RawRecord
 from casebound.ingest.raw import DissectEvtxAdapter, DissectMftAdapter, RawModeDependencyError
 from casebound.ingest.raw._loader import load_evtx_class, load_mft_class

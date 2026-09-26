@@ -118,7 +118,8 @@ failing.
 - The optional web viewer behind the `web` extra.
 - Dark mode and responsive tables in the HTML report; `--version`; clean CLI errors
   for unreadable evidence and blocked output paths.
-- CI workflow actions pinned to commit SHAs.
+- CI workflow actions pinned to commit SHAs, on their Node 24 releases, with the
+  checkout token not persisted.
 
 ## [0.1.0] - 2026-06-06
 

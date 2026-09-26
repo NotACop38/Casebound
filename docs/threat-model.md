@@ -56,7 +56,7 @@ qualified analyst; it does not replace one.
 | An upload exhausts memory or disk. | A Content-Length is required and capped before the body is parsed, the file is re-checked against the byte cap while streaming, and the case store is bounded with oldest-first eviction. | `tests/test_web.py` |
 | AGPL code enters the Apache-2.0 core. | Dissect is an optional extra, confined to `casebound/ingest/raw`, and loaded only from a function in the source registry when an operator selects a raw source. | `tests/test_license_boundary.py` (static scan and a fresh-interpreter import check) |
 | Real case data or a secret is committed. | Only synthetic or public sample evidence ships. The gate runs detect-secrets against a reviewed baseline. | `make ci` |
-| A dependency or workflow is compromised. | Runtime and dev dependencies are pinned exactly and audited with pip-audit in the gate; GitHub Actions are pinned to commit SHAs; the workflow has read-only permissions and no secrets. | `make ci`, `.github/workflows/ci.yml` |
+| A dependency or workflow is compromised. | Runtime and dev dependencies are pinned exactly and audited with pip-audit in the gate; GitHub Actions are pinned to commit SHAs; the workflow has read-only permissions, does not persist the checkout token, and uses no secrets. | `make ci`, `.github/workflows/ci.yml` |
 
 ## Scope of the source scans
 

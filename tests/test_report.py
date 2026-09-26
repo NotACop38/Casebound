@@ -1,16 +1,17 @@
-"""Tests for the self-contained HTML report renderer (PRD FR28, FR32, FR26).
+"""Tests for the self-contained HTML report (PRD FR28, FR32, FR26).
 
 The load-bearing properties:
 
-  1. Self-contained: the HTML fetches nothing at view time (no external scripts,
-     stylesheets, fonts, or images), so the report opens identically offline.
-  2. Inline citations link to evidence: every accepted claim's citation resolves to
-     an anchored event in the appendix (FR32), and every timeline event is anchored.
-  3. Checked fields only: an accepted claim renders from its verified assertions,
-     never the model's free prose, so a fact the verifier did not check cannot reach
-     the reader as a statement (AGENTS.md prime directive).
-  4. The audit is shown: every rejected claim appears with its reason.
-  5. The no-model path renders the deterministic report and says so (FR26).
+  1. Self-contained: the HTML fetches nothing at view time (no scripts, external
+     stylesheets, fonts, or images), so it opens identically offline.
+  2. Every link resolves: each narrative sentence links to its backing event,
+     every link target is anchored in the document, and when a large case is
+     capped a reference to an event left out is plain text, never a dead link.
+  3. Evidence, not prose: each narrative sentence is phrased from its backing
+     event's own fields, and a model's draft appears only in the labeled audit.
+  4. The no-model path renders the deterministic key findings and says so (FR26).
+  5. The ATT&CK matrix names techniques from the bundled catalog, shows a revoked
+     id's translation, and keeps ids that are not current techniques off it.
   6. Autoescaping: evidence-derived strings cannot inject markup.
 
 All tests run offline with no API keys; the narrative path uses a mocked model.
@@ -18,21 +19,25 @@ All tests run offline with no API keys; the narrative path uses a mocked model.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
+import re
 from pathlib import Path
 from typing import Any
 
-from casebound.enrich.attack import tag_events
+import pytest
+
 from casebound.generate.synth import write_samples
-from casebound.ingest import HayabusaAdapter
-from casebound.normalize import Event, normalize_records
-from casebound.normalize.schema import RawRef
-from casebound.report import NO_MODEL_LABEL, render_report
-from casebound.verify import DraftRequest, VerificationResult, verify_narrative
+from casebound.narrate import OfflineDemoNarrator
+from casebound.normalize.schema import AttackTechnique, Event, RawRef
+from casebound.pipeline import Case, EvidenceInput, analyze, case_from_events
+from casebound.report import NO_MODEL_LABEL, build_report_model, phrase_event, render_html
+from casebound.verify import DraftRequest, verify_narrative
 
 # Real event ids from the office_intrusion scenario at the default seed: the
-# Word-spawned encoded PowerShell process-create event, and the unrelated
-# lateral-movement network logon.
+# Word-spawned encoded PowerShell process-create event, and the lateral-movement
+# network logon on the file server.
 PROCESS_CREATE_ID = "6fb28f7a4aa4868c10e5077dbc43226eb111bc824d953c347b6348a6c58e3c70"
 LATERAL_LOGON_ID = "4e959251e72c7f9c2bcf43acbcdf51ac69baf4542c49ff55e363316299b1da5e"
 
@@ -51,22 +56,22 @@ def _response(*claims: dict[str, Any]) -> str:
     return json.dumps({"claims": list(claims)})
 
 
-def _events(tmp_path: Path) -> list[Event]:
-    csv_path, _ = write_samples(tmp_path)
-    result = normalize_records(HayabusaAdapter().read(csv_path))
-    assert result.problem_count == 0
-    return tag_events(result.events)
+@pytest.fixture(scope="module")
+def no_model_case(tmp_path_factory: pytest.TempPathFactory) -> Case:
+    timeline, _ = write_samples(tmp_path_factory.mktemp("scenario"))
+    return analyze([EvidenceInput(source="hayabusa", path=timeline)], name="office_intrusion")
 
 
-def _verified(events: list[Event]) -> VerificationResult:
-    """Build a result with one accepted claim and one rejected-and-dropped claim."""
+@pytest.fixture(scope="module")
+def narrated_case(no_model_case: Case) -> Case:
+    """One accepted claim (with a context citation) and one rejected, dropped claim."""
     model = StubModel(
         _response(
             {
-                # Prose names the administrator, but only the action is asserted and
-                # checked: the rendered statement must not surface the administrator.
+                # The prose names the administrator, but only the action is asserted:
+                # the sentence a reader sees must come from the event, not the prose.
                 "text": "The domain administrator spawned the encoded PowerShell process.",
-                "citations": [PROCESS_CREATE_ID],
+                "citations": [PROCESS_CREATE_ID, LATERAL_LOGON_ID],
                 "asserts": {"action": "process_create"},
             },
             {
@@ -76,207 +81,224 @@ def _verified(events: list[Event]) -> VerificationResult:
             },
         )
     )
-    # No revision rounds: the mismatched claim is rejected and dropped in one pass.
-    return verify_narrative(events, model, max_rounds=0)
+    result = verify_narrative(list(no_model_case.events), model, max_rounds=0)
+    return case_from_events(
+        no_model_case.events,
+        name="office_intrusion",
+        verification=result,
+        narrative_label="stub model",
+        provenance=no_model_case.provenance,
+        inputs=no_model_case.inputs,
+    )
+
+
+def _event(**overrides: Any) -> Event:
+    base: dict[str, Any] = {
+        "datetime": "2026-03-14T08:42:17Z",
+        "timestamp_raw": "2026-03-14 04:42:17.000 -04:00",
+        "source_timezone": "UTC-04:00",
+        "timestamp_desc": "logged",
+        "message": "synthetic event",
+        "action": "process_create",
+        "source_tool": "hayabusa",
+        "source_artifact": "Security.evtx",
+        "raw_ref": RawRef(source_file="synthetic.csv", record="line:2"),
+        "host": "WIN-ACCT-07",
+        "principal": "CORP\\jdoe",
+        "object": "C:\\Windows\\System32\\cmd.exe",
+    }
+    base.update(overrides)
+    return Event(**base)
+
+
+def _section(html: str, section_id: str) -> str:
+    return html.split(f'<section id="{section_id}">', 1)[1].split("</section>", 1)[0]
 
 
 def _assert_self_contained(html: str) -> None:
-    # No external fetches of any kind at view time (FR28).
-    assert "<!DOCTYPE html>" in html
+    assert html.startswith("<!DOCTYPE html>")
     assert "<script" not in html
     assert "<link" not in html
-    assert 'src="http' not in html
-    assert 'href="http' not in html
+    assert "<img" not in html
     assert "@import" not in html
+    assert "url(" not in html
+    assert not re.search(r"(?:src|href)=\"(?!#)", html), "only in-page links are allowed"
 
 
-def test_report_is_self_contained(tmp_path: Path) -> None:
-    events = _events(tmp_path)
-    html = render_report(events, _verified(events), scenario="office_intrusion")
-    _assert_self_contained(html)
+def _assert_links_resolve(html: str) -> None:
+    anchors = set(re.findall(r'id="(event-[0-9a-f]{64})"', html))
+    targets = set(re.findall(r'href="#(event-[0-9a-f]{64})"', html))
+    assert targets, "expected in-page evidence links"
+    assert targets <= anchors, f"dangling links: {sorted(targets - anchors)[:3]}"
 
 
-def test_every_event_is_anchored_in_the_appendix(tmp_path: Path) -> None:
-    events = _events(tmp_path)
-    html = render_report(events, _verified(events), scenario="office_intrusion")
-    for event in events:
+# 1 and 2. Self-contained, and every link resolves.
+
+
+def test_report_is_self_contained(narrated_case: Case, no_model_case: Case) -> None:
+    _assert_self_contained(render_html(narrated_case))
+    _assert_self_contained(render_html(no_model_case))
+
+
+def test_every_event_is_anchored_and_linked(no_model_case: Case) -> None:
+    html = render_html(no_model_case)
+    for event in no_model_case.events:
         assert f'id="event-{event.event_id}"' in html
-        # The timeline links each event to its appendix anchor.
         assert f'href="#event-{event.event_id}"' in html
+    _assert_links_resolve(html)
 
 
-def test_accepted_claim_citation_links_to_its_backing_event(tmp_path: Path) -> None:
-    events = _events(tmp_path)
-    result = _verified(events)
-    html = render_report(events, result, scenario="office_intrusion")
-
-    assert len(result.accepted) == 1
-    claim = result.accepted[0]
-    # The inline citation links to the backing event, which is anchored in the
-    # appendix (FR32): the link target exists in the document.
-    assert claim.backing_event_id == PROCESS_CREATE_ID
-    assert f'href="#event-{PROCESS_CREATE_ID}"' in html
-    assert f'id="event-{PROCESS_CREATE_ID}"' in html
+def test_capped_report_never_links_to_an_event_it_left_out(narrated_case: Case) -> None:
+    html = render_html(narrated_case, max_events=5)
+    assert "This case has" in html
+    model = build_report_model(narrated_case)
+    shown, capped = model.displayed_events(5)
+    assert capped and len(shown) == 5
+    assert all(event["notable"] for event in shown)
+    _assert_links_resolve(html)
+    anchored = re.findall(r'id="event-([0-9a-f]{64})"', html)
+    assert sorted(anchored) == sorted(event["event_id"] for event in shown)
 
 
-def test_accepted_claim_renders_verified_fields_not_prose(tmp_path: Path) -> None:
-    events = _events(tmp_path)
-    result = _verified(events)
-    html = render_report(events, result, scenario="office_intrusion")
+# 3. Evidence, not prose.
 
-    # The accepted claim asserted only the action, so the verified statement must
-    # carry the action and must not surface the prose's "administrator" as a fact.
-    narrative = html.split('id="audit"', 1)[0]
-    assert "process_create" in narrative
+
+def test_narrative_sentence_is_phrased_from_the_backing_event(narrated_case: Case) -> None:
+    html = render_html(narrated_case)
+    narrative = _section(html, "narrative")
+    backing = narrated_case.event(PROCESS_CREATE_ID)
+    assert backing is not None
+    assert phrase_event(backing) in narrative
     assert "administrator" not in narrative.lower()
-
-
-def test_rejected_claim_appears_in_the_audit_with_its_reason(tmp_path: Path) -> None:
-    events = _events(tmp_path)
-    result = _verified(events)
-    html = render_report(events, result, scenario="office_intrusion")
-
-    assert len(result.dropped) == 1
-    # The audit section names the rejection reason and flags the drop.
-    assert "principal_mismatch" in html
-    assert "dropped" in html
-
-
-def test_appendix_shows_technique_id_and_mapping_source(tmp_path: Path) -> None:
-    # The appendix must render the structured ATT&CK tag for each tagged event,
-    # both the technique id and the mapping source, for audit. The scenario's tags
-    # come through as rule-tag passthrough, so that mapping source appears.
-    events = _events(tmp_path)
-    html = render_report(events, None, scenario="office_intrusion")
-
-    appendix = html.split('id="appendix"', 1)[1]
-    assert "rule_tag" in appendix
-    assert "T1059.001" in appendix
-
-
-def test_accepted_claim_links_backing_event_not_context_citation(tmp_path: Path) -> None:
-    # The claim cites the process-create event (which backs the asserted action)
-    # plus the unrelated logon event (which resolves but does not back the claim).
-    # The inline evidence link must be the backing event; the unrelated citation is
-    # shown only as context, never as the evidence for the statement.
-    events = _events(tmp_path)
-    model = StubModel(
-        _response(
-            {
-                "text": "An encoded PowerShell process was created from Word.",
-                "citations": [PROCESS_CREATE_ID, LATERAL_LOGON_ID],
-                "asserts": {"action": "process_create"},
-            }
-        )
-    )
-    result = verify_narrative(events, model)
-    assert len(result.accepted) == 1
-    assert result.accepted[0].backing_event_id == PROCESS_CREATE_ID
-
-    html = render_report(events, result, scenario="office_intrusion")
-    narrative = html.split('id="audit"', 1)[0]
-    # The backing event is the labeled evidence link.
-    assert "Backing evidence:" in narrative
-    assert f'href="#event-{PROCESS_CREATE_ID}"' in narrative
-    # The unrelated citation appears only under the context label, not as evidence.
+    assert "verified: action" in narrative
+    # The backing event is the evidence link; the other citation is only context.
+    assert f'Backing evidence: <a href="#event-{PROCESS_CREATE_ID}"' in narrative
     assert "also cited for context" in narrative
-    assert f'href="#event-{LATERAL_LOGON_ID}"' in narrative
+    assert f'href="#event-{LATERAL_LOGON_ID}"' in narrative.split("also cited for context", 1)[1]
 
 
-def test_no_model_path_renders_deterministic_report_and_says_so(tmp_path: Path) -> None:
-    events = _events(tmp_path)
-    html = render_report(events, None, scenario="office_intrusion")
+def test_rejected_claim_appears_only_in_the_audit(narrated_case: Case) -> None:
+    html = render_html(narrated_case)
+    audit = _section(html, "audit")
+    assert "principal_mismatch" in audit
+    assert "dropped" in audit
+    assert 'Model draft (rejected): "The domain administrator owned' in audit
+    # The asserted account in the rejection detail is quoted as written (and the
+    # quotes are HTML-escaped like every other evidence-derived string).
+    assert "&#39;CORP\\Administrator&#39;" in audit
+    assert "owned the PowerShell process" not in _section(html, "narrative")
 
-    _assert_self_contained(html)
-    assert "No language model configured" in html
+
+def test_masthead_names_the_inputs_and_the_narrative_source(narrated_case: Case) -> None:
+    html = render_html(narrated_case)
+    assert "synthetic_hayabusa.csv (37 records)" in html
+    assert "stub model" in html
+
+
+# 4. The no-model path.
+
+
+def test_no_model_report_shows_key_findings_and_says_so(no_model_case: Case) -> None:
+    html = render_html(no_model_case)
+    narrative = _section(html, "narrative")
+    assert "No language model configured" in narrative
     assert NO_MODEL_LABEL in html
-    # The deterministic content is still present: every event is anchored.
-    for event in events:
-        assert f'id="event-{event.event_id}"' in html
-    # No claim was produced.
-    assert 'class="claim"' not in html
+    assert 'class="entry claim"' not in html
+    assert '<section id="audit">' not in html
+    tagged = [event for event in no_model_case.events if event.attack_techniques]
+    assert narrative.count('class="entry"') == len(tagged)
+    for event in tagged:
+        assert phrase_event(event) in narrative
 
 
-def test_report_surfaces_episodes_and_iocs(tmp_path: Path) -> None:
-    # The report derives and renders the activity episodes (FR15) and the defanged
-    # indicator set (FR16) from the events, even with no model configured.
-    events = _events(tmp_path)
-    html = render_report(events, None, scenario="office_intrusion")
-
-    assert "Activity episodes" in html
-    assert "Indicators of compromise" in html
-    # An episode id appears as an EP- handle and the network indicators are defanged
-    # in the dedicated indicator section (the appendix still shows the raw evidence).
-    assert 'class="chip ep">EP-' in html
-    assert "sync-update[.]example" in html
-    assert "203[.]0[.]113[.]77" in html
-    iocs_section = html.split('id="iocs"', 1)[1].split('id="appendix"', 1)[0]
-    assert "203.0.113.77" not in iocs_section
-    assert "sync-update.example" not in iocs_section
+def test_offline_narrator_report_shows_a_revised_claim(tmp_path: Path) -> None:
+    timeline, _ = write_samples(tmp_path)
+    case = analyze(
+        [EvidenceInput(source="hayabusa", path=timeline)],
+        name="office_intrusion",
+        model=OfflineDemoNarrator(),
+        model_label=OfflineDemoNarrator.LABEL,
+    )
+    html = render_html(case)
+    assert "accepted after revision round 1" in html
+    assert OfflineDemoNarrator.LABEL in html
+    _assert_links_resolve(html)
 
 
-def test_report_episode_and_ioc_links_resolve_to_appendix_events(tmp_path: Path) -> None:
-    events = _events(tmp_path)
-    html = render_report(events, None, scenario="office_intrusion")
-    # Every event linked from an episode or an indicator is anchored in the appendix.
-    for event in events:
-        if f'href="#event-{event.event_id}"' in html:
-            assert f'id="event-{event.event_id}"' in html
+# 5. The ATT&CK matrix.
 
 
-def test_report_supports_dark_mode_and_stays_self_contained(tmp_path: Path) -> None:
-    # The report adapts to the reader's OS dark-mode preference, and it does so
-    # without fetching anything: the dark palette is an inline token override, so
-    # the self-contained guarantee (FR28) still holds.
-    events = _events(tmp_path)
-    html = render_report(events, None, scenario="office_intrusion")
-    assert "@media (prefers-color-scheme: dark)" in html
-    _assert_self_contained(html)
+def test_matrix_follows_the_enterprise_tactic_order(no_model_case: Case) -> None:
+    matrix = _section(render_html(no_model_case), "attack")
+    headings = re.findall(r"<h3>([^<]+)</h3>", matrix)
+    assert headings[0] == "Initial Access"
+    assert headings.index("Execution") < headings.index("Persistence")
+    assert headings.index("Credential Access") < headings.index("Lateral Movement")
+    assert "Exfiltration" in headings
+
+
+def test_revoked_rule_tag_is_shown_under_its_successor(no_model_case: Case) -> None:
+    html = render_html(no_model_case)
+    assert "T1685.005" in _section(html, "attack")
+    assert "T1070.001" not in _section(html, "attack")
+    assert "written as T1070.001" in _section(html, "appendix")
+
+
+def test_ids_that_are_not_current_techniques_stay_off_the_matrix() -> None:
+    event = _event(attack_techniques=[AttackTechnique("T9999.001", "rule_tag")])
+    html = render_html(case_from_events([event], name="unknown-technique"))
+    matrix = _section(html, "attack")
+    assert "Not current ATT&amp;CK techniques" in matrix
+    assert "T9999.001" in matrix
+    assert '<div class="matrix">' not in matrix
+
+
+# Episodes, indicators, problems.
+
+
+def test_episodes_and_defanged_indicators_are_shown(no_model_case: Case) -> None:
+    html = render_html(no_model_case)
+    assert 'class="chip ep">EP-' in _section(html, "episodes")
+    iocs = _section(html, "iocs")
+    assert "203[.]0[.]113[.]77" in iocs
+    assert "203.0.113.77" not in iocs
+
+
+def test_unparsed_rows_are_listed(tmp_path: Path) -> None:
+    timeline, _ = write_samples(tmp_path)
+    lines = timeline.read_text(encoding="utf-8").splitlines()
+    broken = lines[1].replace("2026-03-14", "2026-13-99", 1)
+    timeline.write_text("\n".join([*lines, broken]) + "\n", encoding="utf-8")
+    record_id = next(csv.DictReader(io.StringIO("\n".join([lines[0], broken]))))["RecordID"]
+    case = analyze([EvidenceInput(source="hayabusa", path=timeline)], name="broken")
+    html = render_html(case)
+    problems = html.split('<section id="problems">', 1)[1]
+    assert "1 source row could not be" in problems
+    assert f'hayabusa: {timeline.name}</td><td class="mono">{record_id}<' in problems
+
+
+# Presentation and escaping.
+
+
+def test_report_supports_dark_mode(no_model_case: Case) -> None:
+    assert "@media (prefers-color-scheme: dark)" in render_html(no_model_case)
 
 
 def test_null_fields_render_blank_not_the_literal_none() -> None:
-    # The canonical schema allows a null host, principal, or object. The HTML report
-    # must blank those cells, exactly as the Markdown and JSON renderers do, and must
-    # never surface the literal text "None" to a reader (Jinja renders Python None as
-    # the string "None" by default, so the template has to guard the nullable fields).
-    sparse = Event(
-        datetime="2026-03-14T08:43:05Z",
-        timestamp_raw="2026-03-14 04:43:05.000 -04:00",
-        source_timezone="America/New_York",
-        timestamp_desc="logged",
-        message="An outbound network connection with no recorded principal.",
-        action="network_connect",
-        source_tool="hayabusa",
-        source_artifact="Security.evtx",
-        raw_ref=RawRef(source_file="synthetic_hayabusa.csv", record="line:3"),
-        host=None,
-        principal=None,
-        object=None,
-    )
-    html = render_report([sparse], None, scenario="nulls")
-    # A null field must never reach the reader as the word "None": not in the
-    # timeline cells (>None</td>) nor in the appendix definition list (>None</dd>).
+    sparse = _event(host=None, principal=None, object=None, action="network_connect")
+    html = render_html(case_from_events([sparse], name="nulls"))
     assert ">None<" not in html
-    # The blanked cells are still rendered, so the row and the appendix entry exist.
     assert f'id="event-{sparse.event_id}"' in html
 
 
-def test_evidence_strings_are_html_escaped(tmp_path: Path) -> None:
-    # An event whose message carries markup must never inject it into the report.
-    hostile = Event(
-        datetime="2026-03-14T08:42:17Z",
-        timestamp_raw="2026-03-14 04:42:17.000 -04:00",
-        source_timezone="America/New_York",
-        timestamp_desc="logged",
+def test_evidence_strings_are_html_escaped() -> None:
+    hostile = _event(
         message="<script>alert('xss')</script>",
-        action="process_create",
-        source_tool="hayabusa",
-        source_artifact="Security.evtx",
-        raw_ref=RawRef(source_file="synthetic_hayabusa.csv", record="line:2"),
-        host="WIN-ACCT-07",
-        principal="CORP\\jdoe",
-        object="C:\\Windows\\System32\\cmd.exe",
+        object='C:\\x"><img src=x onerror=alert(1)>.exe',
+        attack_techniques=[AttackTechnique("T1059.001", "rule_tag")],
     )
-    html = render_report([hostile], None, scenario="escaping")
-    assert "<script>alert('xss')</script>" not in html
+    html = render_html(case_from_events([hostile], name="<b>case</b>"))
+    assert "<script>alert" not in html
+    assert "<img" not in html
     assert "&lt;script&gt;" in html
+    assert "&lt;b&gt;case&lt;/b&gt;" in html

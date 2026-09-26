@@ -8,57 +8,114 @@ Style: no em dashes or en dashes anywhere. Use hyphens, colons, or commas.
 
 ## [Unreleased]
 
-Everything below landed after the 0.1.0 notes were written and is not part of a
-tagged release yet.
+## [0.2.0] - 2026-09-26
+
+A rebuild around one pipeline and a measurable guarantee. Every entry point (the
+CLI, the web viewer, the evaluation) now runs the same `casebound.pipeline.analyze`,
+the narrative a reader sees is composed from the evidence rather than from a
+model's prose, and the verifier is measured by a benchmark designed to catch it
+failing.
+
+### Changed (breaking)
+
+- Narrative sentences are composed from the backing event's canonical fields by a
+  deterministic phrasing layer ("CORP\jdoe started ...\powershell.exe."). A
+  model's text appears only in the rejected-claims audit.
+- `casebound report` takes evidence as `SOURCE:PATH` arguments, several per run
+  and of mixed sources, or plain paths with `--source`. `--case-name` is now
+  `--name` (the old spelling still works).
+- Canonical schema 0.2. The schema moved into the package
+  (`casebound/data/event.schema.json`) and the worked examples to
+  `docs/examples/`. Event ids are unchanged.
+- ATT&CK tagging: the mapping table no longer tags rows from detection sources
+  (Hayabusa, Chainsaw). Their untagged rows come from informational rules, and
+  tagging them put routine administration on the report's matrix.
+- The web viewer moved into the package: `casebound serve` or
+  `python -m casebound.web` (it was `python -m web` from a source tree).
+- The Python API: `render_report`, `run_demo`, `run_report`, and
+  `casebound.metrics` are replaced by `casebound.pipeline.analyze`,
+  `casebound.report.render_html` and `write_reports`, and `casebound.evaluation`.
+  `metrics.json` has a new structure.
+- Providers: the Anthropic default is `claude-opus-5`. There is no default local or
+  OpenAI model, since a stale default fails confusingly; name the model you serve.
 
 ### Added
 
-- `casebound report`: run the full pipeline on your own evidence file with
-  `--source` selecting the adapter (hayabusa, eztools, chainsaw, velociraptor,
-  plaso, or generic_csv with `--column-map`). Deterministic with no model;
-  local-first narrative; cloud only behind the explicit `--allow-cloud` consent.
-- Raw-artifact mode (Phase 8): EVTX and NTFS $MFT parsed directly via Dissect,
-  license-gated behind the opt-in `raw` extra and isolated in
-  `casebound/ingest/raw` so the core stays Apache-2.0 (decision D2).
-- The optional web viewer (Phase 9): a loopback-only FastAPI timeline and report
-  browser behind the opt-in `web` extra, reusing the report layer unchanged.
-- Dark mode and responsive tables in the HTML report.
-- An eager `--version` flag, and clean CLI errors for unreadable evidence files
-  and output paths blocked by an existing file.
+- A bundled MITRE ATT&CK Enterprise 19.2 catalog (858 techniques), rebuilt
+  reproducibly from MITRE's STIX bundle by `scripts/build_attack_catalog.py`. Every
+  technique is validated and named against it, a revoked id a rule still uses is
+  translated to its successor and kept as `source_id` (schema 0.2), and the HTML
+  report gains an ATT&CK matrix in the Enterprise tactic order.
+- The verifier benchmark (`casebound.evaluation`): 14 fabrication classes that must
+  all be rejected and 8 grounded classes that must all be accepted, derived from
+  every event of a case and run through the real parser and checks, with tests
+  proving it catches a deliberately weakened verifier. `casebound demo` fails if the
+  verifier misjudges a single claim. ATT&CK tagging is scored end to end and table
+  only.
+- `casebound verify`: check claims drafted anywhere against a case's `events.jsonl`.
+  `casebound sources` lists every input format; `python -m casebound` works.
+- Hayabusa: JSON and JSONL timelines, every CSV profile, channel and Details
+  abbreviations resolved per channel and EventID, `ExtraFieldInfo` and
+  `AllFieldInfo` merged, `n/a` read as absent.
+- Windows EventID tables keyed by channel (Security, System, Sysmon, Task
+  Scheduler), shared by every Windows source. Plaso's logged EVTX rows now resolve
+  through them (a System 7045 is a `service_install`).
+- Detection severity, normalized from each source's level; high and critical
+  detections join the key findings even without a technique.
+- Model view budget: at most 300 events (`--view-budget`), ATT&CK-tagged and severe
+  first; claims are still verified against the whole case.
+- Providers: structured output constrained to the published claim schema
+  (`casebound/data/claims.schema.json`); Anthropic streaming with server-side
+  refusal fallbacks; refusals, truncation, and SDK failures surface as clean errors
+  with keys scrubbed; `CASEBOUND_MAX_OUTPUT_TOKENS` and `CASEBOUND_LOCAL_API_KEY`;
+  `local`, `openai`, and `anthropic` install extras.
+- The offline demo narrator now exercises the revision loop: one mistake is
+  corrected in round 1, two are dropped.
+- Web viewer uploads for Hayabusa (CSV, JSON, JSONL), Chainsaw, EZTools,
+  Velociraptor, and Plaso.
+- Reports: large cases are capped in HTML (2000 events) and Markdown (500) to the
+  notable events, while `report.json` and `events.jsonl` keep everything; unparsed
+  rows are listed; the masthead names every input.
+- A more realistic scenario: 37 detections (12 attack events, including a service
+  execution and a log clearing tagged with a revoked id, and 25 benign ones,
+  several of them look-alikes of the attack), rendered in Hayabusa's verbose
+  profile.
+- The gate: Hypothesis property tests, a 93% coverage floor, a no-dash style check,
+  warnings as errors, and a CI matrix on Python 3.11, 3.12, and 3.13. The package
+  ships `py.typed`.
 
 ### Fixed
 
-- Verification: rejection details no longer quote the cited event's own field
-  values, so a cloud revision round can no longer leak what the redaction pass
-  stripped (FR36, Hard rule 2).
-- Verification: an accepted claim now renders from the backing event's canonical
-  fields; the model's asserted spelling (a different case, a non-UTC offset, a
-  confusable look-alike) stays in the audit trail and never reaches the reader
-  as the verified statement.
-- Normalization: a partial timestamp (time-only, month name, stray number) is
-  rejected as malformed instead of being silently completed from the current
-  date, which fabricated instants and made event ids differ between runs.
-- Normalization: when detection rows collapse in dedup (one row per rule match),
-  the kept event now merges the other detections' ATT&CK rule tags and titles
-  instead of discarding them based on input order.
-- Ingestion: a UTF-8 BOM (PowerShell Export-Csv, Excel, Notepad) no longer
-  corrupts any adapter; a malformed JSONL line is skipped, not fatal.
-- Enrichment: the domain scan is bounded per token, removing quadratic
-  backtracking on hostile input (shared by the cloud redaction pass); document
-  file names (docx, pdf, json, ...) are no longer promoted to domain indicators;
-  sub-second events order chronologically instead of lexicographically.
-- Reports: the Markdown renderer neutralizes hostile evidence content (raw HTML,
-  javascript: links, code-span breakouts, structure-breaking newlines); the HTML
-  report blanks null fields instead of rendering "None".
-- Web viewer: uploads are gated on their headers (cross-site POSTs refused, a
-  declared in-cap Content-Length required) before the multipart body is parsed,
-  so the size cap actually bounds ingress.
+- The Navigator layer crashed on a technique id missing from its hand-written name
+  table; ids are now checked against the catalog and anything that is not a current
+  technique is left out and named.
+- Episodes: activity by `SYSTEM`, service accounts, and machine accounts no longer
+  splits one actor's run.
+- Indicators: quoted paths are extracted whole, loopback addresses are not
+  indicators, and paths differing only in case collapse.
+- Rejection details show Windows accounts as written, not repr-escaped.
+- Phrasing never re-cases or trims evidence.
+- Everything listed below, which landed after 0.1.0:
+  - Verification: rejection details no longer quote the cited event's own field
+    values, so a cloud revision round cannot leak what redaction stripped (FR36).
+  - Normalization: partial timestamps are rejected instead of completed from the
+    current date; detections that collapse in dedup merge their rule tags.
+  - Ingestion: a UTF-8 BOM no longer corrupts any adapter; a malformed JSONL line
+    is skipped, not fatal.
+  - Enrichment: the domain scan is bounded per token; document names are not
+    domains; sub-second events order by instant.
+  - Reports: the Markdown renderer neutralizes hostile evidence; the HTML report
+    blanks null fields.
+  - Web viewer: uploads are gated on their headers before the body is parsed.
 
-### Changed
+### Also since 0.1.0
 
-- Packaging: the sdist ships the web viewer package and `.env.example`, so an
-  unpacked sdist is self-testable again; the CI workflow actions are pinned to
-  commit SHAs.
+- Raw-artifact mode: `.evtx` and `$MFT` parsed with Dissect behind the opt-in
+  `raw` extra, isolated so the core stays Apache-2.0 (decision D2).
+- The optional web viewer behind the `web` extra.
+- Dark mode and responsive tables in the HTML report; `--version`; clean CLI errors
+  for unreadable evidence and blocked output paths.
+- CI workflow actions pinned to commit SHAs.
 
 ## [0.1.0] - 2026-06-06
 
@@ -129,5 +186,6 @@ ever see it.
 - Apache-2.0 for the core. The optional raw-artifact mode (Dissect, AGPL-3.0)
   remains isolated and is not part of this release.
 
-[Unreleased]: https://github.com/NotACop38/casebound/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/NotACop38/casebound/releases/tag/v0.1.0
+[Unreleased]: https://github.com/NotACop38/Casebound/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/NotACop38/Casebound/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/NotACop38/Casebound/releases/tag/v0.1.0

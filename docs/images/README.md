@@ -1,52 +1,45 @@
-# Demo images
-
-This directory holds the README's visual assets.
+# Images
 
 ## report.png
 
-`docs/images/report.png` is the README hero: a screenshot of the generated,
-self-contained HTML report (`out/report.html`), framed from the masthead through
-the rejected-claims audit so the whole verification story (the verified narrative
-with per-claim citations, beside the dropped-and-logged claims) reads in one view.
-See PRD Section 14 and Phase 7.
+The README's hero: the HTML report `casebound demo` writes for the bundled
+synthetic scenario, framed from the masthead through the rejected-claims audit, so
+the whole verification story reads in one image: the guarantee, the verified
+narrative grouped by episode with every sentence linked to its evidence, one claim
+accepted only after revision, and the rejected and dropped drafts.
 
-It is committed and kept in sync with the report layout. The report is
-self-contained, so the screenshot renders with no network.
-
-To regenerate it after the report layout changes:
+The report is self-contained, so it renders with no network. To regenerate the
+image after the report layout changes (Playwright and Pillow are screenshot-only
+tools, not project dependencies):
 
 ```bash
-# 1. Produce the report.
-make demo                      # writes out/report.html
+casebound demo -o out
+pip install playwright pillow && playwright install chromium
 
-# 2a. Reproduce the committed framing (top through the rejected-claims audit)
-#     with a headless browser via Playwright:
 python - <<'PY'
 from pathlib import Path
+
+from PIL import Image
 from playwright.sync_api import sync_playwright
 
 report = Path("out/report.html").resolve()
 with sync_playwright() as p:
-    page = p.chromium.launch().new_page(
-        viewport={"width": 1200, "height": 1600}, device_scale_factor=2
-    )
+    browser = p.chromium.launch()
+    page = browser.new_page(viewport={"width": 1200, "height": 1600}, device_scale_factor=1.5)
     page.goto(report.as_uri())
-    page.wait_for_load_state("networkidle")
+    # Cut just above the ATT&CK matrix, which follows the rejected-claims audit.
     cut = page.evaluate(
-        "() => { const h = [...document.querySelectorAll('section > h2')]"
-        ".find(e => e.textContent.trim().startsWith('Deterministic timeline'));"
-        " return Math.round(h.closest('section').getBoundingClientRect().top"
-        " + window.scrollY) - 18; }"
+        "() => Math.round(document.getElementById('attack').getBoundingClientRect().top"
+        " + window.scrollY) - 18"
     )
     page.set_viewport_size({"width": 1200, "height": cut})
     page.screenshot(path="docs/images/report.png")
+    browser.close()
+
+# A 256-color palette keeps the flat UI and text sharp at about a third of the size.
+image = Image.open("docs/images/report.png").convert("RGB")
+image.quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).save(
+    "docs/images/report.png", optimize=True
+)
 PY
-
-# 2b. Or a quick fixed-window capture with any headless renderer:
-chromium --headless --screenshot=docs/images/report.png \
-  --window-size=1200,2000 --hide-scrollbars out/report.html
 ```
-
-Playwright is a screenshot-only developer tool, not a project dependency. Install
-it into your environment (`pip install playwright && playwright install chromium`)
-only when you need to regenerate this image.

@@ -3,7 +3,7 @@
 Most of Casebound consumes tool output a responder already produced (Hayabusa,
 the Eric Zimmerman tools, Chainsaw, Velociraptor, Plaso, generic CSV). Raw mode is
 the exception: it parses evidence artifacts directly for users who have not
-pre-run those tools. The MVP raw adapters parse a Windows EVTX event log and an
+pre-run those tools. The raw adapters parse a Windows `.evtx` event log and an
 NTFS `$MFT`, normalizing both into the same canonical event schema as every other
 source.
 
@@ -24,15 +24,42 @@ Raw mode is an opt-in extra:
 pip install "casebound[raw]"
 ```
 
-This installs `dissect.eventlog` (EVTX) and `dissect.ntfs` (`$MFT`).
+This installs `dissect.eventlog` (EVTX) and `dissect.ntfs` (`$MFT`), pinned to
+the versions the adapters were verified against.
 
-## Using the adapters
+## From the command line
+
+The raw sources are `evtx` and `mft`, and they mix freely with tool output in one
+case:
+
+```
+casebound report evtx:Security.evtx 'mft:$MFT' hayabusa:hayabusa-timeline.csv -o out
+```
+
+(Quote `$MFT` so the shell does not expand it.) Without the extra, the command
+exits with status 2 and names the install command.
+
+## From Python
 
 The raw adapters implement the same `IngestAdapter` interface as every other
-source, so their records flow through the existing normalize pipeline unchanged.
-They are imported from the isolated `casebound.ingest.raw` subpackage, not the
-top-level `casebound.ingest` package, so that nothing on the core import path ever
-references them.
+source, so their records flow through the normalize pipeline unchanged. The
+simplest route is the shared pipeline, which resolves the source through the
+registry:
+
+```python
+from pathlib import Path
+
+from casebound.pipeline import EvidenceInput, analyze
+
+case = analyze(
+    [EvidenceInput("evtx", Path("Security.evtx")), EvidenceInput("mft", Path("$MFT"))],
+    name="raw triage",
+)
+```
+
+The adapters can also be used directly. They live in the isolated
+`casebound.ingest.raw` subpackage, not the top-level `casebound.ingest` package, so
+nothing on the core import path references them.
 
 ```python
 from pathlib import Path
@@ -81,10 +108,12 @@ permissive while still offering raw mode, Dissect is isolated three ways:
    `read`, only when a user invokes raw parsing, so importing the package (or the
    `casebound.ingest.raw` subpackage itself) loads no AGPL code.
 3. No core import path. Every Dissect-dependent line lives in the single
-   subpackage `casebound/ingest/raw`. No module outside it imports Dissect or that
-   subpackage, so the entire core pipeline (ingest of tool output, normalize,
-   enrich, verify, narrate, report, the demo) runs with zero AGPL code on its
-   import graph.
+   subpackage `casebound/ingest/raw`. No module outside it imports Dissect, and the
+   only module that imports the subpackage is the source registry
+   (`casebound/sources.py`), inside `build_adapter`, when an operator selects a raw
+   source. The entire core pipeline (ingest of tool output, normalize, enrich,
+   verify, narrate, report, the demo, the web viewer) runs with zero AGPL code on
+   its import graph.
 
 Because of (3), the normalization of the records the raw adapters emit lives in
 the Apache-2.0 core (`casebound/normalize/mappers/dissect.py`) and is fully tested
@@ -92,7 +121,10 @@ offline with golden fixtures; only the thin Dissect byte-parsing is gated behind
 the extra.
 
 The boundary is enforced in code by `tests/test_license_boundary.py`, which fails
-if any core module imports `dissect` or `casebound.ingest.raw`, if Dissect ever
+if any core module imports `dissect`, if any module but the registry imports
+`casebound.ingest.raw` (or the registry does so at module level), if a fresh
+interpreter that loads the CLI, the pipeline, the reports, and a tool-output
+adapter ends up with any Dissect or raw module in `sys.modules`, if Dissect ever
 becomes a core dependency, or if the core license stops being Apache-2.0.
 
 When you install the `raw` extra and use these adapters, the resulting combined,

@@ -29,8 +29,8 @@ Never weaken, bypass, shortcut, or optimize away the verifier. If a change would
 ## Conventions
 
 - Language: Python 3.11+. Typing enforced with mypy. Lint and format with ruff.
-- Layout: follow PRD Section 13. Module boundaries are firm: `ingest`, `normalize`, `enrich`, `verify`, `narrate`, `report`, `generate`, `cli`.
-- The canonical event schema (PRD Section 10) is the keystone; everything hangs off it. `schema/event.schema.json` is the validation source of truth.
+- Layout: follow PRD Section 13. Module boundaries are firm: `ingest`, `normalize`, `enrich`, `verify`, `narrate`, `report`, `generate`, `cli`, plus the shared `pipeline` (the one `analyze` every entry point calls), `sources` (the input registry, the only gateway to the AGPL raw subpackage), `evaluation`, and the optional `web` viewer.
+- The canonical event schema (PRD Section 10) is the keystone; everything hangs off it. `casebound/data/event.schema.json` is the validation source of truth.
 - Commits: conventional style (feat, fix, chore, docs, test, refactor), imperative mood, no em dashes. Keep a curated history, no “wip” or “asdf”.
 - Provider-agnostic by design. The product’s model provider is abstracted behind one interface (Anthropic, OpenAI, local), defaulting to local. Do not hardcode a provider.
 - Agent-agnostic by design. This repository is built by Claude Code and Codex interchangeably. Make no assumptions about which agent is running and add no agent-specific code paths or files beyond the standard `AGENTS.md` and `CLAUDE.md`.
@@ -43,8 +43,8 @@ The agent owns the build surface. Keep these working as the project grows. Names
 - `make lint` : ruff plus mypy, zero errors.
 - `make test` : pytest, all green, no network, no API keys.
 - `make demo` : run the full pipeline on the bundled synthetic scenario, offline, producing `out/report.html` and the metrics.
-- `make ci` : lint, test, schema validation, secret scan, dependency audit. This is the gate. Per PRD decision D3 this may be a local runner or a GitHub Actions workflow; keep the same gate either way.
-- `make security` : secret scan, bandit, pip-audit, and the defensive-scope invariant tests.
+- `make ci` : lint, types, tests with the coverage floor, schema validation, the no-dash style check, secret scan, bandit, dependency audit. This is the gate. Per PRD decision D3 this may be a local runner or a GitHub Actions workflow; keep the same gate either way.
+- `make security` : the gate (which includes the secret scan, bandit, and pip-audit), then the defensive-scope invariant tests as a named step.
 
 ## Definition of Done
 

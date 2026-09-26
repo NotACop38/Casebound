@@ -1,6 +1,6 @@
 # Casebound - Engineering Checklist
 
-> Status: Draft v0.1 - Companion to PRD.md (source of truth). Work top to bottom; do not start a phase before the prior phase’s exit criteria are met.
+> Status: v0.2 - Companion to PRD.md (source of truth). Work top to bottom; do not start a phase before the prior phase’s exit criteria are met.
 > Legend: [A] = good candidate to offload to a coding agent for bulk work. [D] = decide or design with the human first.
 > Guiding principle: prove the whole pipeline (ingest, normalize, tag, verify, report) on ONE source and ONE scenario in Phase 1 before adding breadth. De-risk the schema and the verifier on a single slice rather than discovering problems across many sources.
 > Convention: no em dashes or en dashes anywhere, in code, comments, docs, or CLI output. Use hyphens, colons, or commas.
@@ -15,7 +15,7 @@ Exit criteria: schema v0.1 committed and validating; repo skeleton builds; pytes
 - [x] [D] Confirm blocking decisions: D1 name, D2 license, D3 CI convention. (Recorded in PRD Section 17: D1 Casebound, D2 Apache-2.0, D3 GitHub Actions plus the same local gate. D5 redaction depth is also resolved. The only residual is D1's external name-availability check on GitHub and PyPI, a manual-only step below.)
 - [x] [D] Sign off the canonical event schema v0.1 field set (PRD Section 10).
 - [x] [A] Scaffold the package per PRD Section 13 (modules as empty-but-importable), pyproject.toml with pinned deps, LICENSE per D2, .gitignore, .env.example, Makefile, ruff and mypy config, pre-commit, README stub.
-- [x] [A] Write schema/event.schema.json (JSON Schema) from PRD Section 10, plus docs/schema.md with two worked examples.
+- [x] [A] Write schema/event.schema.json (JSON Schema) from PRD Section 10, plus docs/schema.md with two worked examples. (Moved to `casebound/data/event.schema.json` and `docs/examples/` in Phase 11.)
 - [x] [A] Add a trivial passing test so the harness is green from day one.
 
 ## Phase 1 - Vertical slice (tracer bullet)
@@ -107,7 +107,7 @@ Goal: a browsable timeline and report.
 Exit criteria: the UI reuses the report layer unchanged and preserves all offline and no-egress guarantees.
 
 - [x] [D] Confirm D4. (Lean: include the minimal FastAPI viewer as the opt-in stretch, reusing the report layer unchanged. Its server deps are an opt-in `web` extra, off the default import graph; the core and CLI do not depend on it. See PRD Section 17 D4.)
-- [x] [A] Minimal FastAPI app: load a case, browse the timeline, view the report, with size and type limits on any upload and no auto-fetch of anything. (`web/app.py` plus `web/case.py` and autoescaped templates in `web/templates/`. The report route renders through the unchanged `casebound.report` layer, so the served demo report is byte for byte the report `casebound demo` writes, proven in `tests/test_web.py`. Uploads are bounded (a streamed byte cap, 413 past it) and typed (a `.csv` name plus a text or CSV content type and UTF-8 decode, 415 otherwise), parsed read-only as Hayabusa CSV; nothing is opened, executed, or fetched, and an upload yielding no events is rejected. Offline and loopback-only, no outbound socket, asserted by the no-egress test. See `web/README.md`.)
+- [x] [A] Minimal FastAPI app: load a case, browse the timeline, view the report, with size and type limits on any upload and no auto-fetch of anything. (Originally `web/app.py` plus `web/case.py` and autoescaped templates in `web/templates/`; moved into the package as `casebound/web` in Phase 11. The report route renders through the unchanged `casebound.report` layer, so the served demo report is byte for byte the report `casebound demo` writes, proven in `tests/test_web.py`. Uploads are bounded (a streamed byte cap, 413 past it) and typed (a `.csv` name plus a text or CSV content type and UTF-8 decode, 415 otherwise), parsed read-only as Hayabusa CSV; nothing is opened, executed, or fetched, and an upload yielding no events is rejected. Offline and loopback-only, no outbound socket, asserted by the no-egress test. See `docs/web-viewer.md`.)
 
 ## Phase 10 - Community readiness and release
 
@@ -118,6 +118,22 @@ Exit criteria: a stranger can add an ingestion adapter and get it merged via CI;
 - [x] [A] Issue and PR templates, including a “new source” template that requires a fixture and a golden test.
 - [x] [A] Release dry run: build sdist and wheel, install into a fresh environment, run the demo end to end, confirm the metrics, inspect the wheel for stray fixtures or secrets, draft release notes and CHANGELOG.md.
 - [x] [A] Tag v0.1.0. Set the repo description, topics, and social preview per D3 tooling. (Tag applied locally; the repo description, topics, and social preview remain manual-only steps, see below.)
+
+## Phase 11 - v0.2: one pipeline, a readable narrative, a measured guarantee
+
+Goal: close the gaps a real case exposes: a crash on an unknown ATT&CK id, a narrative that read as field dumps, metrics that could not fail, Hayabusa output the demo never produced, and three entry points with three pipelines.
+Exit criteria: the CLI, the web viewer, and the evaluation run one `analyze`; every narrative sentence is phrased from its event; the benchmark fails on a weakened verifier; the gate runs on Python 3.11 to 3.13 with a coverage floor; every doc matches the code.
+
+- [x] [A] Bundle the MITRE ATT&CK Enterprise 19.2 catalog, built by `scripts/build_attack_catalog.py` from the official STIX bundle. Validate and name every technique against it, translate revoked rule tags to their successors (schema 0.2 `source_id`), and fix the Navigator crash on an unknown id. (`casebound/enrich/catalog.py`, `tests/test_catalog.py`, `tests/test_attack_layer.py`.)
+- [x] [D] Tag detection sources from their rules alone and use the mapping table only for sources without a detection layer (PRD R10), so benign informational rows stay off the matrix. End-to-end precision and recall on the scenario: 1.0 and 1.0; the table alone is published at 0.62 and 0.57.
+- [x] [A] One pipeline: `casebound.pipeline.analyze` returns a `Case` that the CLI, the web viewer, and the evaluation all use; `casebound.sources` is the single registry of input formats. (`tests/test_pipeline.py`, `tests/test_sources.py`.)
+- [x] [A] Deterministic phrasing: each accepted claim is shown as a sentence composed from its backing event's fields, never the model's prose. (`casebound/report/phrasing.py`, `tests/test_phrasing.py`.)
+- [x] [A] Replace the self-fulfilling metrics with the verifier benchmark: 14 fabrication classes and 8 grounded classes derived from every event, plus tests proving a weakened verifier is caught. (`casebound/evaluation.py`, `tests/test_evaluation.py`.)
+- [x] [A] Real Hayabusa output: JSON and JSONL timelines, every CSV profile, channel and Details abbreviations resolved per channel and EventID, ExtraFieldInfo and AllFieldInfo; the generator renders the verbose profile. Channel-keyed Windows EventID tables shared by every Windows source, including Plaso's EVTX rows. (`tests/test_hayabusa_formats.py`, `tests/test_plaso.py`.)
+- [x] [A] Providers: structured output against `casebound/data/claims.schema.json`, Anthropic streaming with server-side refusal fallbacks, clean errors with keys scrubbed, a deterministic view budget, and contract tests against the pinned SDK signatures. (`tests/test_llm.py`.)
+- [x] [A] The CLI takes several evidence files of mixed sources per case and adds `verify`, `sources`, and `serve`; the web viewer moves into the package and accepts every tool-output source. (`tests/test_cli.py`, `tests/test_web.py`.)
+- [x] [A] Strengthen the gate: Hypothesis property tests for the verifier and the phrasing, a 93% coverage floor, a no-dash style check, warnings as errors, the Python 3.11 to 3.13 matrix, and current pins. (`scripts/ci.py`, `.github/workflows/ci.yml`.)
+- [x] [A] Bring every document in line with the code and rewrite the README.
 
 ## Cross-cutting / always-on
 

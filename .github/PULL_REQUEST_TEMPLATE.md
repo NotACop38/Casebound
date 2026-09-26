@@ -21,8 +21,8 @@ Closes #
 
 ## Checklist
 
-- [ ] `make ci` is green locally (lint, types, tests, schema, secrets, bandit,
-      deps).
+- [ ] `make ci` is green locally (lint, types, tests with the coverage floor,
+      schema, style, secrets, bandit, deps).
 - [ ] New behavior has tests.
 - [ ] No real case data and no secrets are added. Only synthetic or public sample
       evidence.
@@ -49,6 +49,8 @@ A new source requires both a fixture and a golden test. See
       package.
 - [ ] Mapper in `casebound/normalize/mappers/<source>.py`, registered in
       `default_mappers()`.
+- [ ] Source registered in `casebound/sources.py` (and, for a detection tool, in
+      `DETECTION_SOURCES` in `casebound/enrich/attack.py`).
 - [ ] **Fixture** in `tests/fixtures/<source>_slice.*` (good row, fallback row,
       malformed row).
 - [ ] **Golden file** in `tests/fixtures/<source>_slice.events.json`, verified

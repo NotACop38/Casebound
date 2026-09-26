@@ -1,106 +1,116 @@
-# Canonical event schema v0.1
+# Canonical event schema 0.2
 
-This is the human-readable reference for the keystone record described in
-`PRD.md` Section 10. Everything downstream of normalization hangs off it: ingest
-adapters feed mappers that produce these events, enrichment annotates them, the
-verifier addresses them by `event_id`, and the report links every claim back to
-one of them.
+Every input Casebound reads, whatever tool produced it, is normalized into this one
+record (PRD Section 10). Everything downstream hangs off it: enrichment annotates
+it, the verifier addresses it by `event_id`, and every sentence of a report links
+back to one.
 
-The machine-readable validation source of truth is
-[`schema/event.schema.json`](../schema/event.schema.json). The Python record that
-mirrors it exactly is `casebound/normalize/schema.py`. If the two ever disagree,
-that is a bug. The schema is frozen for the vertical slice; changing it requires
-stopping and asking first (see `AGENTS.md`).
-
-Note on style: no em dashes or en dashes anywhere, per PRD Section 15.
+The validation source of truth is the JSON Schema shipped inside the package,
+[`casebound/data/event.schema.json`](../casebound/data/event.schema.json). The
+Python record that mirrors it is `casebound/normalize/schema.py`; the test suite
+and the CI gate hold the two together. Changing the schema needs a stop-and-ask
+(AGENTS.md).
 
 ## Fields
 
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `event_id` | string (64 hex) | yes | Stable SHA-256 content hash of the normalized core fields. Always derived, never authored. See "Event identity" below. |
-| `datetime` | string | yes | ISO 8601 timestamp normalized to UTC, with a trailing `Z`, for example `2026-03-14T08:42:17Z`. |
-| `timestamp_raw` | string | yes | The original timestamp string exactly as found in the source. |
-| `source_timezone` | string | yes | The timezone used to derive `datetime`: an IANA name such as `America/New_York`, or `UTC`, or the literal `assumed_utc` when no zone was known. |
-| `timestamp_desc` | string | yes | One of `created`, `modified`, `accessed`, `logged`, `other`. How the timestamp relates to the event (Timesketch-friendly). |
-| `message` | string | yes | A short human-readable summary of the event. |
-| `host` | string or null | yes | Hostname or system identifier, or `null` when unknown. |
-| `principal` | string or null | yes | Account, user, or SID associated with the event, or `null` when unknown. |
-| `action` | string | yes | A normalized snake_case verb, for example `process_create`, `logon`, `file_write`, `registry_set`, `service_install`, `network_connect`. The vocabulary is open; `KNOWN_ACTIONS` lists the recommended verbs. |
-| `object` | string or null | yes | The primary target (process path, file path, registry key, remote endpoint), or `null` when not applicable. |
-| `source_tool` | string | yes | One of `hayabusa`, `eztools`, `chainsaw`, `velociraptor`, `plaso`, `generic_csv`, `dissect`. |
-| `source_artifact` | string | yes | The originating artifact, for example `Security.evtx`, `$MFT`, `NTUSER.dat UserAssist`. |
-| `details` | object | yes | A structured object holding source-specific fields. May be empty. |
-| `attack_techniques` | array | yes | List of `{ technique_id, mapping_source }`. `technique_id` looks like `T1059` or `T1059.001`. `mapping_source` records how the mapping was made, for example `rule_tag` or `mapping_table`. May be empty. |
-| `ioc_refs` | array of strings | yes | References into the extracted IOC set. May be empty. |
-| `confidence` | number | yes | Normalization and mapping confidence, from 0 to 1. |
-| `raw_ref` | object | yes | `{ source_file, record }`: a pointer back to the source record for audit (FR11). |
-| `tags` | array of strings | yes | Free-form labels, for example an episode id or analyst tags. May be empty. |
+Every field is present on every event. Only `host`, `principal`, and `object` may
+be `null`; arrays and objects may be empty.
 
-Every field is present on every event. The fields that can be `null` are `host`,
-`principal`, and `object`; the array and object fields can be empty but are never
-absent.
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `event_id` | string, 64 hex | SHA-256 content hash of the core fields. Always derived, never authored (see "Identity"). |
+| `datetime` | string | The instant in UTC, ISO 8601 with a trailing `Z`, for example `2026-03-14T08:42:17Z`. Sub-second precision is kept. |
+| `timestamp_raw` | string | The timestamp exactly as the source wrote it. |
+| `source_timezone` | string | How `datetime` was derived: an IANA zone (`America/New_York`), `UTC`, the fixed offset the source printed (`UTC-04:00`), or `assumed_utc` when the source gave no zone. |
+| `timestamp_desc` | string | How the time relates to the event: `created`, `modified`, `accessed`, `logged`, or `other` (Timesketch's convention). |
+| `message` | string | A short summary. For a detection source it is the rule title. |
+| `host` | string or null | The system the event happened on. |
+| `principal` | string or null | The acting account, as `DOMAIN\user` when the domain is known. |
+| `action` | string | A snake_case verb such as `process_create`, `logon`, `registry_set`, `service_install`, `log_clear`. `KNOWN_ACTIONS` lists the vocabulary the mappers emit; `other` means the source did not say. |
+| `object` | string or null | The primary target: an image or file path, a registry value, a service or task name, a share, a remote endpoint, an event log. |
+| `source_tool` | string | `hayabusa`, `chainsaw`, `eztools`, `velociraptor`, `plaso`, `generic_csv`, or `dissect`. |
+| `source_artifact` | string | The artifact the record came from, for example `Security.evtx` or `$MFT`. |
+| `details` | object | Source-specific fields, kept for the evidence appendix. The model never sees them. |
+| `attack_techniques` | array | `{technique_id, mapping_source, source_id?}` objects (see below). |
+| `ioc_refs` | array of strings | Ids of the indicators extracted from this event. |
+| `confidence` | number, 0 to 1 | How fully the record was understood. The Windows event mappers use 1.0 for an EventID their table covers and 0.5 when they fall back to a generic `other`. |
+| `raw_ref` | object | `{source_file, record}`: where the record is in the source file (the EVTX record id when the source gives one, else a line or entry number). |
+| `tags` | array of strings | Labels such as the event's activity episode (`episode:EP-df801a77c149`). |
 
-## Event identity
+### ATT&CK techniques
 
-`event_id` is the SHA-256 hex digest of a canonical encoding of exactly these
-core fields, in this order:
+Each entry of `attack_techniques` records a technique and how it was assigned:
+
+- `technique_id`: a current ATT&CK Enterprise technique or sub-technique id
+  (`T1059` or `T1059.001`).
+- `mapping_source`: `rule_tag` when the source's own detection rule named it, or
+  `mapping_table` when Casebound's documented table inferred it for a source with
+  no detection layer (`casebound/enrich/attack.py`).
+- `source_id` (new in 0.2, optional): present only when the source wrote an id
+  that MITRE has since revoked. The tagger resolves every id against the bundled
+  ATT&CK 19.2 catalog, emits the successor as `technique_id`, and keeps what the
+  evidence said here. A rule that still tags Clear Windows Event Logs as
+  `T1070.001` yields `{"technique_id": "T1685.005", "mapping_source": "rule_tag",
+  "source_id": "T1070.001"}`.
+
+## Identity
+
+`event_id` is the SHA-256 hex digest of a canonical encoding of these core fields,
+in this order, prefixed with the fixed namespace `casebound-event-v0.1`:
 
 ```
 datetime, timestamp_desc, host, principal, action, object, source_tool, source_artifact
 ```
 
-A namespace string that includes the schema version is folded into the hashed
-content, so ids cannot silently collide across future schema versions. A `null`
-core field hashes the same as an empty string.
+A `null` field hashes like an empty string. `datetime` is canonicalized first: it
+is parsed to a real instant and rendered in one form with trailing sub-second zeros
+trimmed, so `08:42:17Z` and `08:42:17.000Z` share an id while `08:42:17.5Z` does
+not. An impossible calendar instant is rejected.
 
-The `datetime` is canonicalized before it is hashed: it is parsed to a real UTC
-instant and re-rendered in one fixed representation, with sub-second precision
-preserved but trailing zeros trimmed. So `2026-03-14T08:42:17Z` and
-`2026-03-14T08:42:17.000Z` are the same instant, canonicalize to the same
-string, and produce the same `event_id`, while a genuinely different instant such
-as `2026-03-14T08:42:17.5Z` produces a different id. Impossible calendar instants
-are rejected outright.
+Consequences the verifier relies on:
 
-The record is immutable once constructed. Core identity fields cannot be
-reassigned, so an `event_id` can never drift out of sync with the fields it
-hashes; enrichment that adds tags or technique mappings builds a new event or
-mutates list contents in place rather than rebinding a core field.
+- The same observation always gets the same id, whichever run produced it.
+  Enrichment and presentation fields (`message`, `details`, `attack_techniques`,
+  `ioc_refs`, `confidence`, `tags`) and the provenance fields (`timestamp_raw`,
+  `source_timezone`, `raw_ref`) are outside the identity, so tagging or
+  clustering never moves an id.
+- Changing any core field changes the id.
+- The id is always recomputed. Loading an event whose stored id does not match its
+  core fields is an error, so a stale or tampered id cannot pass.
+- Records that describe the same observation collapse into one event, and every
+  source record is kept as its provenance (FR12): the same export read twice, or
+  two overlapping collections, produce one event with a pointer into each file.
+  Because `source_tool` and `source_artifact` are core fields, the same real-world
+  event seen by two different tools stays two events, each with its own
+  provenance; merging across tools would change the identity definition.
 
-Two consequences follow, and they are exactly the guarantees the verifier relies
-on:
+The namespace names the identity definition, not the schema version. The core
+fields and their encoding are unchanged since 0.1, so event ids are stable across
+the 0.1 to 0.2 change.
 
-- Determinism: the same logical event always produces the same `event_id`,
-  regardless of which run produced it. Enrichment and presentation fields
-  (`message`, `details`, `attack_techniques`, `ioc_refs`, `confidence`, `tags`)
-  and the provenance pointer (`timestamp_raw`, `source_timezone`, `raw_ref`) are
-  deliberately outside the identity, so re-tagging or re-summarizing an event
-  never changes its id.
-- No collision: changing any core field changes the `event_id`.
+## Changes from 0.1
 
-`event_id` is always recomputed from the core fields, never trusted from input.
-Loading an event whose stored `event_id` does not match its core fields is an
-error, so a tampered or stale id never passes silently. This is what makes an id
-an unforgeable handle to a real, deterministically extracted event.
+- `attack_techniques[].source_id` records a revoked technique id the source wrote.
+- The schema moved from `schema/event.schema.json` into the package, so an installed
+  Casebound validates against exactly the schema it was built with.
 
-Cross-source de-duplication of otherwise-identical observations (FR12) is a later
-phase and does not change this identity definition. If it ever needs to, that is
-a schema change: stop and ask first.
+## Worked examples
 
-## Worked example 1: Windows process create
+These are real records from `events.jsonl` for the bundled synthetic scenario,
+committed under [`docs/examples/`](examples/) and validated against the schema by
+the CI gate.
 
-A Word document spawns an encoded PowerShell command. This is the kind of event
-that anchors an initial-access claim in the narrative. The source timestamp was
-recorded in `America/New_York` and normalized to UTC.
+The Word-spawned PowerShell that opens the intrusion
+([`windows_process_create.json`](examples/windows_process_create.json)):
 
 ```json
 {
   "event_id": "6fb28f7a4aa4868c10e5077dbc43226eb111bc824d953c347b6348a6c58e3c70",
   "datetime": "2026-03-14T08:42:17Z",
-  "timestamp_raw": "2026-03-14 03:42:17",
-  "source_timezone": "America/New_York",
+  "timestamp_raw": "2026-03-14 04:42:17.000 -04:00",
+  "source_timezone": "UTC-04:00",
   "timestamp_desc": "logged",
-  "message": "winword.exe spawned powershell.exe with an encoded command",
+  "message": "Office Application Spawned PowerShell (Possible Phishing Macro)",
   "host": "WIN-ACCT-07",
   "principal": "CORP\\jdoe",
   "action": "process_create",
@@ -108,65 +118,45 @@ recorded in `America/New_York` and normalized to UTC.
   "source_tool": "hayabusa",
   "source_artifact": "Security.evtx",
   "details": {
-    "process_id": 6042,
-    "parent_process_id": 4188,
-    "parent_image": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
-    "command_line": "powershell.exe -nop -w hidden -enc SQBFAFgA",
-    "event_id": 4688
+    "win_event_id": 4688,
+    "channel": "Security",
+    "fields": {
+      "CommandLine": "powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQA",
+      "NewProcessName": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "ParentProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+      "SubjectDomainName": "CORP",
+      "SubjectUserName": "jdoe"
+    },
+    "level": "high",
+    "rule_title": "Office Application Spawned PowerShell (Possible Phishing Macro)",
+    "mitre_tactics": ["InitAccess", "Exec"],
+    "rule_mitre_tags": ["T1566.001", "T1059.001"]
   },
   "attack_techniques": [
-    { "technique_id": "T1059.001", "mapping_source": "rule_tag" },
-    { "technique_id": "T1566.001", "mapping_source": "mapping_table" }
+    { "technique_id": "T1566.001", "mapping_source": "rule_tag" },
+    { "technique_id": "T1059.001", "mapping_source": "rule_tag" }
   ],
-  "ioc_refs": ["ioc-0007"],
-  "confidence": 0.95,
-  "raw_ref": { "source_file": "hayabusa-timeline.csv", "record": "1487" },
-  "tags": ["episode-initial-access"]
+  "ioc_refs": ["ioc-4c86505da896", "ioc-503b5fcafd6e"],
+  "confidence": 1.0,
+  "raw_ref": { "source_file": "synthetic_hayabusa.csv", "record": "81104" },
+  "tags": ["episode:EP-df801a77c149"]
 }
 ```
 
-This event lives at
-[`schema/examples/windows_process_create.json`](../schema/examples/windows_process_create.json)
-and is validated against the schema in CI.
+(`details` is abridged here; the committed file carries every field.) Note that
+the principal reads `CORP\jdoe`: Hayabusa's Details template for Security 4688
+shows only `SubjectUserName`, and the mapper recovers the domain from the
+`ExtraFieldInfo` column.
 
-## Worked example 2: Windows logon
-
-A successful network logon for a service account from another host on the
-network, the kind of event that anchors a lateral-movement claim. Note that the
-nested `details.event_id` (the Windows event id 4624) is unrelated to the
-canonical `event_id`; the canonical id is always the content hash at the top
-level.
+The log clearing that ends it
+([`windows_log_clear.json`](examples/windows_log_clear.json)) shows a revoked rule
+tag translated to its successor:
 
 ```json
-{
-  "event_id": "4e959251e72c7f9c2bcf43acbcdf51ac69baf4542c49ff55e363316299b1da5e",
-  "datetime": "2026-03-14T08:55:03Z",
-  "timestamp_raw": "03/14/2026 04:55:03 AM",
-  "source_timezone": "America/New_York",
-  "timestamp_desc": "logged",
-  "message": "Successful network logon for CORP\\svc-backup from 10.4.12.66",
-  "host": "WIN-FILE-02",
-  "principal": "CORP\\svc-backup",
-  "action": "logon",
-  "object": "10.4.12.66",
-  "source_tool": "hayabusa",
-  "source_artifact": "Security.evtx",
-  "details": {
-    "logon_type": 3,
-    "event_id": 4624,
-    "source_ip": "10.4.12.66",
-    "authentication_package": "NTLM"
-  },
-  "attack_techniques": [
-    { "technique_id": "T1021.002", "mapping_source": "mapping_table" }
-  ],
-  "ioc_refs": ["ioc-0003"],
-  "confidence": 0.9,
-  "raw_ref": { "source_file": "hayabusa-timeline.csv", "record": "1623" },
-  "tags": ["episode-lateral-movement"]
-}
+"attack_techniques": [
+  { "technique_id": "T1685.005", "mapping_source": "rule_tag", "source_id": "T1070.001" }
+]
 ```
 
-This event lives at
-[`schema/examples/windows_logon.json`](../schema/examples/windows_logon.json)
-and is validated against the schema in CI.
+[`windows_logon.json`](examples/windows_logon.json) is the stolen-credential
+network logon on the file server, the anchor of the lateral-movement episode.

@@ -33,7 +33,10 @@ RawRecord        --[mapper]--->  Event (the canonical schema)
 The pipeline dispatches each record to the mapper registered for its
 `source_tool`, assigns the stable content-derived `event_id`, de-duplicates
 identical events while keeping every provenance pointer (FR12), and collects the
-problems. You write the adapter and the mapper; the pipeline does the rest.
+problems. A one-line entry in the source registry (`casebound/sources.py`) then
+makes the source available to `casebound report`, `casebound sources`, and,
+optionally, the web viewer. You write the adapter and the mapper; the pipeline does
+the rest.
 
 This split keeps each source's quirks in one small adapter and the canonical-event
 logic in one place.
@@ -126,7 +129,10 @@ class AcmeEdrAdapter(IngestAdapter):
                 line = line.strip()
                 if not line:
                     continue
-                row = json.loads(line)
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue  # a truncated line cannot become a record
                 if not isinstance(row, dict):
                     continue
                 record_id = _as_str(row.get("id")).strip() or f"line:{index}"
@@ -251,6 +257,13 @@ class AcmeEdrMapper(Mapper):
 record is frozen and the id is always a faithful hash of the core fields, which is
 what lets the pipeline de-duplicate while keeping provenance.
 
+If your source carries Windows event-log records, do not write your own EventID
+table: resolve the channel and EventID with `mapping_for`, and the principal and
+object with `derive_principal` and `derive_object`, from
+`casebound/normalize/mappers/winevent.py`. Every Windows source (Hayabusa,
+Chainsaw, Velociraptor, raw EVTX, Plaso's EVTX rows) maps through that one table,
+so the same event gets the same canonical fields whichever tool read it.
+
 ### 4. Register the mapper
 
 Add the mapper to the registry so the pipeline can dispatch to it:
@@ -262,7 +275,30 @@ from casebound.normalize.mappers.acme_edr import AcmeEdrMapper
 #     AcmeEdrMapper.source_tool: AcmeEdrMapper(),
 ```
 
-### 5. Add a fixture and a golden file
+### 5. Register the source
+
+Add a `SourceSpec` to `SOURCES` in `casebound/sources.py` and a branch to
+`build_adapter` that imports and returns your adapter. The spec names the source as
+typed on the command line, the canonical `source_tool`, a one-line description,
+and the file suffixes it arrives as:
+
+```python
+# casebound/sources.py, one more entry in the SOURCES table
+SourceSpec("acme_edr", "acme_edr", "Acme EDR detections exported as JSONL", (".jsonl",))
+```
+
+That is all `casebound report acme_edr:export.jsonl` and `casebound sources` need.
+To accept the source in the web viewer as well, add its name to `UPLOAD_SOURCES` in
+`casebound/web/app.py`.
+
+If your source is a detection tool, where every row is a rule match and the rule
+carries its own ATT&CK tags, add its `source_tool` to `DETECTION_SOURCES` in
+`casebound/enrich/attack.py`. Its rows are then tagged from the rule alone, and a
+row without tags (an informational rule) is not second-guessed by the mapping
+table. For a source of raw events, leave it out, and the documented mapping table
+tags what it recognizes.
+
+### 6. Add a fixture and a golden file
 
 Keep the fixture small and real-shaped, with at least one good row, one row that
 exercises the fallback, and one malformed row to prove FR7.
@@ -280,7 +316,7 @@ print `[event.to_dict() for event in result.events]`, eyeball every field, then
 paste the verified result into `tests/fixtures/acme_edr_slice.events.json`. Never
 hand-wave the golden: it is the thing that locks your mapping down.
 
-### 6. Write the golden test
+### 7. Write the golden test
 
 Pin the fixture to the golden output, and assert the load-bearing properties. Model
 it on `tests/test_chainsaw.py`.
@@ -327,15 +363,16 @@ assert they normalize to canonical technique ids and that the deterministic
 tagging step promotes them, the way `tests/test_chainsaw.py` does. The mapper
 preserves rule tags in `details`; it never decides techniques itself.
 
-### 7. Run the gate
+### 8. Run the gate
 
 ```bash
 make ci
 ```
 
-Lint, types, the full test suite, schema validation, the secret scan, bandit, and
-the dependency audit all run offline. Green means you are done. Open a pull request
-with the "new source" checklist.
+Lint, types, the full test suite with its coverage floor, schema validation, the
+style check, the secret scan, bandit, and the dependency audit. Everything but the
+dependency audit runs offline. Green means you are done. Open a pull request with
+the "new source" checklist.
 
 ## The new-source checklist
 
@@ -347,6 +384,11 @@ with the "new source" checklist.
       raises `MappingError` on a row that cannot become a valid event.
 - [ ] Mapper registered in `default_mappers()` and exported from
       `casebound/normalize/mappers/__init__.py`.
+- [ ] Windows event records map through `casebound/normalize/mappers/winevent.py`.
+- [ ] `SourceSpec` and `build_adapter` branch added in `casebound/sources.py`.
+- [ ] Detection sources added to `DETECTION_SOURCES` in
+      `casebound/enrich/attack.py`; optionally, upload sources to `UPLOAD_SOURCES`
+      in `casebound/web/app.py`.
 - [ ] Fixture in `tests/fixtures/<source>_slice.*` with a good row, a fallback
       row, and a malformed row.
 - [ ] Golden file in `tests/fixtures/<source>_slice.events.json` verified field by

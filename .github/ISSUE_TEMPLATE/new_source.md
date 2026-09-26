@@ -45,6 +45,10 @@ authoring standard:
       field by field.
 - [ ] A **normalization golden test** in `tests/test_<source>.py` that pins the
       fixture to the golden output and proves malformed rows are reported (FR7).
+- [ ] A `SourceSpec` and a `build_adapter` branch in `casebound/sources.py`, so
+      `casebound report <source>:<file>` works.
+- [ ] For a detection tool, its `source_tool` added to `DETECTION_SOURCES` in
+      `casebound/enrich/attack.py`.
 - [ ] `make ci` is green.
 
 ## Scope confirmation

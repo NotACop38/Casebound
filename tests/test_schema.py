@@ -12,13 +12,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import FrozenInstanceError
+from pathlib import Path
 from typing import Any
 
 import jsonschema
 import pytest
+
 from casebound.normalize.schema import (
     CORE_ID_FIELDS,
-    SCHEMA_PATH,
+    SCHEMA_VERSION,
     AttackTechnique,
     Event,
     RawRef,
@@ -27,6 +29,9 @@ from casebound.normalize.schema import (
     load_schema,
     validate_event_dict,
 )
+
+# The worked examples the docs show and the CI gate validates.
+EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "docs" / "examples"
 
 
 def make_event(**overrides: Any) -> Event:
@@ -84,9 +89,8 @@ def test_minimal_event_with_null_fields_is_valid() -> None:
 
 def test_committed_examples_validate() -> None:
     # The worked examples shipped for docs and CI must conform.
-    examples_dir = SCHEMA_PATH.parent / "examples"
-    files = sorted(examples_dir.glob("*.json"))
-    assert files, "expected committed example events under schema/examples/"
+    files = sorted(EXAMPLES_DIR.glob("*.json"))
+    assert files, "expected committed example events under docs/examples/"
     for path in files:
         instance = json.loads(path.read_text(encoding="utf-8"))
         validate_event_dict(instance)
@@ -277,3 +281,49 @@ def test_from_dict_rejects_null_required_string() -> None:
 
 def test_schema_document_is_valid() -> None:
     jsonschema.Draft202012Validator.check_schema(load_schema())
+
+
+def test_schema_document_names_the_module_version() -> None:
+    assert f"schema version {SCHEMA_VERSION}" in load_schema()["description"]
+
+
+# Schema 0.2: a revoked ATT&CK id the source wrote is kept beside its successor.
+
+
+def test_technique_source_id_round_trips_and_validates() -> None:
+    event = make_event(
+        attack_techniques=[AttackTechnique("T1685.005", "rule_tag", source_id="T1070.001")]
+    )
+    data = event.to_dict()
+    validate_event_dict(data)
+    assert data["attack_techniques"] == [
+        {"technique_id": "T1685.005", "mapping_source": "rule_tag", "source_id": "T1070.001"}
+    ]
+    assert Event.from_dict(data) == event
+
+
+def test_technique_without_source_id_omits_the_key() -> None:
+    assert AttackTechnique("T1059.001", "rule_tag").to_dict() == {
+        "technique_id": "T1059.001",
+        "mapping_source": "rule_tag",
+    }
+
+
+def test_malformed_technique_source_id_is_rejected() -> None:
+    with pytest.raises(SchemaError):
+        AttackTechnique("T1685.005", "rule_tag", source_id="Clear Windows Event Logs")
+    data = make_event().to_dict()
+    data["attack_techniques"] = [
+        {"technique_id": "T1685.005", "mapping_source": "rule_tag", "source_id": "bogus"}
+    ]
+    with pytest.raises(jsonschema.ValidationError):
+        validate_event_dict(data)
+
+
+def test_techniques_do_not_change_the_event_id() -> None:
+    # Enrichment is not identity: ids stay stable across the 0.1 to 0.2 schema.
+    plain = make_event(attack_techniques=[])
+    tagged = make_event(
+        attack_techniques=[AttackTechnique("T1685.005", "rule_tag", source_id="T1070.001")]
+    )
+    assert plain.event_id == tagged.event_id

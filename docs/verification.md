@@ -1,226 +1,235 @@
 # The verification model
 
-This is the human-readable contract for the fence between the language model and
-the report (`PRD.md` Section 11, AGENTS.md prime directive and Hard rule 4). It
-defines two things precisely:
+This is the contract for the fence between a language model and the report (PRD
+Section 11, AGENTS.md prime directive and Hard rule 4). It defines:
 
-1. the claim-and-citation format the model must emit, and
-2. the field-consistency rules the deterministic verifier applies to every claim.
+1. what the model is shown,
+2. the claim-and-citation format it must return,
+3. the rules the deterministic verifier applies to every claim,
+4. what a reader of the report actually sees, and
+5. how the guarantee is measured.
 
-The rule the whole product hangs on: no factual claim reaches a report unless it
-resolves to a real, deterministically extracted timeline event by `event_id` and
-the facts it asserts (time, principal, action, object) are consistent with that
-event. The deterministic layer is the source of truth. The model proposes; the
-verifier disposes. The model never decides what is true and never sees raw
-evidence files.
+The rule everything hangs on: no factual claim reaches a report unless it resolves
+to a real, deterministically extracted timeline event by `event_id`, and the facts
+it asserts (time, principal, action, object) are consistent with that event. The
+deterministic layer is the source of truth. The model proposes; the verifier
+disposes.
 
-Note on style: no em dashes or en dashes anywhere, per PRD Section 15. Use
-hyphens, colons, or commas.
+## 1. What the model sees
 
-## What the model sees
+The model never sees evidence files, `details`, command lines, or file contents.
+It sees a compact, id-addressed view of each event (FR17):
 
-The model is given a compact, id-addressed view of the timeline (FR17), never the
-raw evidence. Each event is reduced to its `event_id` plus the addressable fields
-the verifier can check against:
+| Field | Why it is shown |
+| --- | --- |
+| `event_id` | The only way a claim can point at evidence. |
+| `datetime`, `principal`, `action`, `object` | The four facts a claim may assert, so the verifier can check them. |
+| `host`, `message` | Where the event happened, and the source's own one-line summary (for a detection source, the rule title). |
+| `techniques` | The event's ATT&CK technique ids, decided deterministically by the tagger. |
+| `severity` | The detection rule's severity, normalized to `informational`, `low`, `medium`, `high`, or `critical`. |
 
-```
-event_id, datetime, host, principal, action, object, message
-```
+`techniques` and `severity` exist to help a model choose which events tell the
+story. They are not assertable facts: a claim cannot assert a technique.
 
-The `message` is the short normalized summary from the canonical schema, not a
-raw artifact. The model never receives `details`, command lines, file contents,
-or any source file. This is the structural guarantee in Hard rule 4: because the
-model can only address events by id and can only see these reduced fields, it
-cannot smuggle a fact in from outside the timeline without the verifier catching
-it.
+**The view budget.** A large case is cut to at most `--view-budget` events
+(default 300) before it is shown. The cut is deterministic: events carrying an
+ATT&CK technique first, then by severity, then chronologically; the chosen events
+are shown in chronological order, and the prompt states how many were left out.
+The cut changes only what the model sees. Every claim is still verified against
+every event in the case.
 
-## The claim and citation format
+**Cloud redaction.** On the local path the view above is sent as is; evidence stays
+on the host. A cloud provider is opt-in (`--allow-cloud`) and receives a redacted
+view (decision D5, FR36): the free-text `message` and the `principal` are replaced
+with `[redacted]`, indicators (IP addresses, domains, hashes, paths) and usernames
+inside `object` are blanked, and `host` can be stripped too
+(`CASEBOUND_REDACT_HOST=1`). `event_id`, `datetime`, `action`, `techniques`, and
+`severity` pass, because they address the event or describe its class rather than
+its content. Redaction limits what a cloud claim can assert; it never weakens the
+check, because the verifier compares every claim with the full, unredacted events
+on the host.
 
-The model returns a single JSON object. Its `claims` field is an ordered array of
-claim objects, one per factual statement in the narrative:
+## 2. The claim format
+
+The model returns one JSON object. Its `claims` array holds one object per factual
+statement:
 
 ```json
 {
   "claims": [
     {
-      "text": "On WIN-ACCT-07, CORP\\jdoe ran an encoded PowerShell process spawned from Word.",
+      "text": "Word spawned an encoded PowerShell as jdoe.",
       "citations": ["6fb28f7a4aa4868c10e5077dbc43226eb111bc824d953c347b6348a6c58e3c70"],
       "asserts": {
         "datetime": "2026-03-14T08:42:17Z",
         "principal": "CORP\\jdoe",
         "action": "process_create",
         "object": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
-      }
+      },
+      "revises": null
     }
   ]
 }
 ```
 
-Each claim object has three parts:
+- `text`: a readable sentence for the audit trail. It is never checked and never
+  shown as a fact (see section 4).
+- `citations`: one or more `event_id` strings, each a 64-character lowercase
+  SHA-256 hex digest (`docs/schema.md`).
+- `asserts`: the facts the claim commits to. Four optional fields are recognized,
+  `datetime`, `principal`, `action`, and `object`, mirroring the canonical event
+  fields. A null or empty value means the claim does not assert that field. At
+  least one must be asserted.
+- `revises`: on a revision round, the `claim_id` of the rejected claim this one
+  replaces; otherwise null or absent.
 
-- `text`: the prose that will appear in the report. This is presentation only and
-  is never itself checked for truth. It must not assert any fact that is not also
-  declared in `asserts` and grounded by a citation.
-- `citations`: an array of one or more `event_id` strings. An `event_id` is a
-  64-character lowercase SHA-256 hex digest (see `docs/schema.md`). This is the
-  only way a claim can point at evidence.
-- `asserts`: the machine-checkable facts the claim commits to. Exactly four
-  fields are recognized, each optional: `datetime`, `principal`, `action`,
-  `object`. These mirror the canonical event fields of the same name. A claim
-  must assert at least one of them. Any other key is ignored.
-- `revises` (revision rounds only): the `claim_id` of the outstanding claim this
-  one replaces, echoed from the revision request (see the loop below). Absent on a
-  fresh claim. It is how the engine matches a revision to the claim it fixes
-  without relying on ordering.
-
-The `asserts` block is the heart of the fence. The model is not trusted to write
-true prose; it is required to commit, in machine-readable form, to the specific
-facts it is asserting, so the verifier can check each one against the cited event.
-The `text` is bound to those asserted facts: it is the readable rendering of a
-claim the evidence actually supports.
+The format is published as a JSON Schema,
+[`casebound/data/claims.schema.json`](../casebound/data/claims.schema.json), in the
+strict form (every property required, optional ones nullable) that structured
+output APIs accept. The bundled providers send it to the model where the API
+supports it; the parser accepts any conforming document regardless of how it was
+produced.
 
 ### Parsing rules
 
-Claims are parsed deterministically (FR19). The parser is strict about structure
-and records every citation, well-formed or not, so the verifier can act on it:
+Parsing is deterministic (FR19):
 
-- The output must be valid JSON: either the object form above, or a bare array of
-  claim objects. Anything else is unparseable and yields no claims for that round.
-- Each citation is classified as well-formed (it matches the `event_id` pattern)
-  or malformed (anything else, for example `EVENT-1487` or a truncated hash).
-  Malformed citations are retained for the audit log but provide no support: they
-  are treated as unsupported (PRD Section 11 step 3).
-- A claim that carries no citation at all is rejected.
+- The document must be valid JSON: the object form above or a bare array of
+  claims. A Markdown code fence around it is tolerated. Anything else is
+  unparseable and yields no claims for that round.
+- A claim without `text` is skipped.
+- Each citation is classified as well formed (it matches the `event_id` pattern,
+  after trimming and lower-casing) or malformed (anything else, for example
+  `EVENT-80038` or a truncated id). Malformed citations are kept for the audit log
+  and provide no support.
 
-Because an accepted claim's citations all become links in the report, the verifier
-holds every citation to the same standard: a claim is rejected if it carries any
-malformed citation, or any well-formed citation that does not resolve to a real
-event, even when one other citation does back the assertion. This keeps the
-guarantee airtight for multi-citation claims: every citation on an accepted claim
-resolves to a real event.
+## 3. The rules
 
-## Field-consistency rules
+A claim is accepted if and only if all of these hold, checked in this order:
 
-A claim is **accepted** if and only if all hold:
+1. It carries at least one citation and no malformed citation.
+2. It asserts at least one of the four facts.
+3. Every cited `event_id` resolves to a real event in the case (FR20). A single
+   unresolved citation rejects the claim, so every citation on an accepted claim
+   links to real evidence (FR32).
+4. At least one cited event is consistent with every asserted fact (FR21). One
+   event must back the whole claim, which prevents stitching one event's
+   principal onto another event's action. Other cited events are kept as context.
 
-1. **Citations resolve.** The claim carries at least one citation, no malformed
-   citation, and every cited `event_id` resolves to a real event in the
-   deterministic store (FR20). A single unresolved or malformed citation rejects
-   the claim, so every citation on an accepted claim links to a real event (FR32).
-2. **Field consistency.** There exists at least one cited event that is consistent
-   with **every** field the claim asserts (FR21). A single event must back the
-   whole assertion; this prevents stitching one event's principal onto another
-   event's action. Additional cited events are permitted (for example for context)
-   but they too must resolve, and at least one must fully back the claim.
-
-If no single cited event satisfies all asserted fields, the claim is **rejected**
-with the reason from the first field that fails, checked in this fixed order:
-`datetime`, then `principal`, then `action`, then `object`.
+When no cited event backs every fact, the rejection reason is the first failing
+field of the first cited event, with fields checked in the order `datetime`,
+`principal`, `action`, `object`.
 
 ### Per-field comparison
 
-Only the fields the claim actually asserts are checked. An absent asserted field
-is not checked. A field the event does not have (a null `principal` or `object`)
-can never satisfy an assertion about it: you cannot assert a fact the evidence
-does not record.
+Only asserted fields are checked. A field the event does not record (a null
+`principal` or `object`) can never satisfy an assertion about it: a claim cannot
+assert a fact the evidence does not contain.
 
-- **datetime** (`time_mismatch`). Both the asserted time and the event time are
-  parsed as UTC instants and must agree within a tolerance window. The default
-  tolerance is 1 second; it is configurable through `FieldTolerance`. The event
-  times are already canonical UTC, and the model is shown the exact `datetime`,
-  so the asserted time is expected to echo it. The small default window only
-  absorbs sub-second representation differences. An unparseable asserted time is a
-  mismatch.
-- **principal** (`principal_mismatch`). Compared as text after trimming
-  surrounding whitespace and case-folding, because Windows account names are
-  case-insensitive. `CORP\\jdoe` and `corp\\JDOE` match; `CORP\\Administrator`
-  does not.
-- **action** (`action_mismatch`). The canonical snake_case verb, compared after
-  trimming and case-folding. The model is shown the exact verb, so it must echo
-  it: a claim asserting `process_create` cannot cite a `logon` event.
-- **object** (`object_mismatch`). The primary target (process path, file path,
-  registry key, remote endpoint), compared after trimming and case-folding, since
-  Windows paths are case-insensitive.
+- `datetime` (`time_mismatch`): both values are parsed as instants and must agree
+  within the tolerance, 1 second by default (`FieldTolerance`). Any ISO 8601 offset
+  is accepted, so `2026-03-14T09:42:17+01:00` matches `2026-03-14T08:42:17Z`. An
+  unparseable value is a mismatch.
+- `principal` (`principal_mismatch`), `action` (`action_mismatch`), and `object`
+  (`object_mismatch`): compared as text after trimming and case-folding, because
+  Windows accounts and paths are case-insensitive. A Unicode look-alike (a Cyrillic
+  `а` for a Latin `a`) is a different string and does not match.
 
 ### Rejection reasons
 
-Every rejected claim is recorded with one of these reasons (FR22, FR25):
-
 | Reason | Meaning |
 | --- | --- |
-| `no_citations` | The claim carried no citation at all. |
-| `malformed_citation` | The claim carried a citation that was not a valid event id (any malformed citation rejects the whole claim, even alongside valid ones). |
-| `missing_id` | No cited id resolves to a real event in the store. |
-| `no_assertions` | The claim asserted none of the four checkable facts. |
-| `time_mismatch` | The asserted time is outside tolerance of the cited event. |
-| `principal_mismatch` | The asserted principal does not match the cited event. |
-| `action_mismatch` | The asserted action does not match the cited event. |
-| `object_mismatch` | The asserted object does not match the cited event. |
+| `malformed_citation` | A citation is not a valid event id (one malformed citation rejects the claim). |
+| `no_citations` | The claim cites nothing. |
+| `no_assertions` | The claim asserts none of the four facts. |
+| `missing_id` | A cited id does not resolve to an event in the case. |
+| `time_mismatch` | No cited event is within tolerance of the asserted time. |
+| `principal_mismatch` | No cited event has the asserted principal. |
+| `action_mismatch` | No cited event has the asserted action. |
+| `object_mismatch` | No cited event has the asserted object. |
 
-## What reaches the report: checked fields only
+A rejection detail quotes only the value the model asserted, never the event's
+value. Details travel back to the model as revision hints, and on the cloud path a
+hint must not carry evidence the redaction pass removed.
 
-The model's free `text` is a drafting aid, not the report's source of truth.
-Nothing stops a model from stating a fact in prose that it never put in `asserts`
-(for example, naming the domain administrator in `text` while asserting only
-`action`), and the verifier cannot deterministically check arbitrary prose. So the
-prose is never emitted as fact. An accepted claim carries both the model's
-`asserts` and a `verified` snapshot: the backing event's canonical values for
-exactly the asserted fields. The report renders the claim from the canonical
-snapshot, never from the model's spellings. The distinction matters because the
-checks are deliberately tolerant (case folding, a small time window), so within
-that equivalence class the model could otherwise pick the presentation: a
-confusable look-alike path, a non-UTC offset, a different case. The model's
-original prose and asserted spellings are preserved alongside the claim for the
-audit trail, but neither is rendered as a factual statement. This is the fence
-made literal: the model proposes wording, but only the event's own values for
-fields the verifier confirmed reach the reader as facts (AGENTS.md prime
-directive). The practical consequence: every fact a model wants in the report must
-be in `asserts`, where it is checked, or it does not appear.
+## 4. What reaches the reader
 
-## The generate-test-refine loop
+Nothing the model writes is shown as a fact. For each accepted claim, the report
+shows a sentence composed by `casebound.report.phrasing` from the backing event's
+own canonical fields, for example:
 
-The engine drives the loop in PRD Section 11 (FR23 to FR25):
+> CORP\jdoe started C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe.
 
-1. Build the compact event view and ask the model to draft the narrative as
-   claims (round 0).
-2. Parse and verify every claim. Accepted claims are set aside. Each rejected
-   claim is recorded in the audit log with its round, citations, reason, and a
-   human-readable detail.
-3. If any claim was rejected and rounds remain, resubmit just the rejected claims
-   for revision. Each outstanding claim carries a stable `claim_id`, sent to the
-   model in its revision request. The model returns a revised claim that names the
-   id it fixes in a `revises` field, so the engine matches a revision to the claim
-   it replaces by id, never by position (a revision that omits an earlier claim
-   while fixing a later one is handled correctly). The revisions are re-verified; a
-   revised claim that now passes is accepted, and its original rejection stays in
-   the audit log for transparency. A returned claim with no `revises` (or an
-   unknown id) is treated as a fresh claim and is still fully verified, so a
-   revision round can never introduce an unverified claim.
-4. An outstanding claim that no revision addresses (the model omitted it, or the
-   revision output was unparseable) is carried to the final round and then dropped
-   and recorded, never silently lost.
-5. Repeat up to `max_rounds` revision rounds (default 2).
-6. After the final round, drop any claim that is still unsupported. A dropped
-   claim never reaches the report and is flagged `dropped` in the audit log
-   (FR24, FR25).
+beside the event's time, host, detection title, severity, and ATT&CK techniques,
+a `verified:` badge naming the facts the model asserted and the verifier confirmed,
+and a link to the backing event in the evidence appendix. Other cited events are
+listed as context. The model's `text` and its spellings of the asserted values
+(a different case, a non-UTC offset) never appear; the tolerant comparison lets
+them match, but the reader sees the evidence's own values. A rejected claim appears
+only in the rejected-claims audit, labeled as a rejected model draft, with its
+reason.
 
-The output is the verified narrative (the accepted claims, each linked to its
-backing event for inline citation in the report, FR32) plus the rejected-claims
-audit, which ships with every report so the rejections are transparent.
+The model therefore decides which events the narrative covers and in what order.
+It cannot decide what the narrative says about them.
 
-## Guarantees
+## 5. The loop
 
-- Citation accuracy is 1.0 by construction: an emitted claim has, by definition,
-  a cited event whose fields are consistent with everything it asserts. Anything
-  less is a verifier bug, not an acceptable output.
-- The hallucination-rejection rate is measured, not asserted. The hallucination
-  trap (FR35, `samples/hallucination_trap.json`) seeds deliberately fabricated
-  claims (a nonexistent event, a wrong time, a wrong principal, a wrong action, a
-  wrong object, a malformed citation) and the test asserts the verifier rejects
-  every one. The headline number the demo prints is computed from a
-  programmatically seeded set covering the same fabrication classes
-  (`build_seeded_fabrications` in `casebound/metrics.py`); the committed fixture
-  pins the identical behavior in the test suite.
-- The model is fenced: it only ever sees the compact, id-addressed view, it must
-  commit to machine-checkable assertions, and it never has the authority to state
-  a fact the deterministic layer has not confirmed.
+The engine runs PRD Section 11's generate, test, and refine loop (FR23 to FR25):
+
+1. Round 0: the model drafts claims from the view.
+2. Every claim is parsed and verified. Accepted claims are kept. Each rejected
+   claim gets a stable `claim_id` and an audit entry with its round, citations,
+   reason, and detail.
+3. While rounds remain (`--max-rounds`, default 2), the rejected claims go back to
+   the model with their `claim_id`, text, citations, reason, and detail. A revision
+   names the claim it fixes in `revises`, so revisions are matched by id, never by
+   position. A returned claim with no `revises`, or an unknown one, is verified as
+   a fresh claim; a revision round can never introduce an unverified claim.
+4. A rejected claim that no revision addresses (omitted, or the output was
+   unparseable) is carried to the final round.
+5. After the final round, every still-unsupported claim is dropped and flagged
+   `dropped` in the audit. A dropped claim never reaches the narrative.
+
+## Checking claims from anywhere
+
+The verifier does not care who drafted a claim. `casebound verify` checks a claims
+file written by another tool, another model, or a person against a case's
+`events.jsonl`:
+
+```console
+$ casebound verify claims.json --events out/events.jsonl --out verdicts.json
+ACCEPT  CORP\jdoe started C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe. [6fb28f7a4aa4]
+REJECT  The domain administrator launched PowerShell.
+        principal_mismatch: asserted principal 'CORP\Administrator' does not match the principal of event 6fb28f7a4aa4
+1 of 2 claim(s) verified against 37 event(s)
+wrote verdicts.json
+```
+
+It exits 0 when every claim is accepted and 1 when any is rejected.
+
+## How the guarantee is measured
+
+- **The verifier benchmark** (`casebound.evaluation`, printed by `casebound demo`
+  and written to `metrics.json`). From every event of a case it derives claims in
+  the model's format and runs them through the real parser and checks. Fourteen
+  fabrication classes must all be rejected: a nonexistent id, a truncated id, a
+  record number as a citation, no citation, no assertion, a time just outside the
+  tolerance, a time hours off, a swapped principal, action, or object, a Unicode
+  look-alike object, a claim stitched from two events, and a true claim carrying
+  one dangling or one malformed extra citation. Eight grounded classes must all be
+  accepted: exact, re-cased, whitespace-padded, a non-UTC offset for the same
+  instant, a sub-second difference within tolerance, a subset of the fields, an
+  upper-case id, and an extra context citation. On the bundled scenario that is
+  495 fabricated claims rejected and 296 grounded claims accepted, with zero
+  false accepts and zero false rejects. The test suite also proves the benchmark
+  has teeth: a verifier weakened in any single check produces false accepts in
+  exactly the classes that probe it.
+- **Citation accuracy.** Every claim a narrative run accepted is re-verified from
+  scratch. The target is 1.0; less is a verifier bug.
+- **The hallucination trap** (FR35, `samples/hallucination_trap.json`): one
+  grounded claim and eight fabricated claims, one per rejection reason, pinned
+  against the bundled scenario. The suite asserts every fabrication is rejected for
+  its expected reason.
+- **Property-based tests** (`tests/test_verify.py`): for every event of the
+  scenario, its exact facts are accepted, and any single fact changed beyond
+  tolerance is rejected with the matching reason.

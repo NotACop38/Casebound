@@ -26,6 +26,10 @@ a { color: var(--link); }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; }
 .panel p { margin: 0 0 12px; }
 form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+label { display: inline-flex; gap: 6px; align-items: center; }
+select, input[type=file] { font: inherit; color: var(--ink); }
+select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+.hint { color: var(--muted); font-size: 13px; margin: 12px 0 0; }
 button { font: inherit; padding: 7px 14px; border: 1px solid var(--link); background: var(--link); color: #fff; border-radius: 6px; cursor: pointer; }
 .empty { color: var(--muted); font-style: italic; }
 footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 14px; color: var(--muted); font-size: 12.5px; }
@@ -36,8 +40,8 @@ footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 14px;
 
 <header class="masthead">
   <h1>Casebound</h1>
-  <p class="tagline">Local-first DFIR investigation copilot. Browse the timeline and the
-  verification-fenced report. Runs fully offline; no evidence leaves this host.</p>
+  <p class="tagline">Local case viewer. Browse a case's timeline and open its verified report.
+  Runs offline; no evidence leaves this host.</p>
 </header>
 
 <section>
@@ -53,8 +57,8 @@ footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 14px;
       <tr>
         <td>{{ c.title }}</td>
         <td class="mono">{{ c.source_label }}</td>
-        <td>{{ c.event_count }}</td>
-        <td>{{ "verified narrative" if c.has_narrative else "deterministic (no model)" }}</td>
+        <td>{{ c.event_count }}{% if c.problem_count %} <span class="hint">({{ c.problem_count }} unparsed)</span>{% endif %}</td>
+        <td>{{ "verified narrative" if c.has_narrative else "deterministic findings" }}</td>
         <td>
           <a href="/cases/{{ c.case_id }}/timeline">timeline</a> /
           <a href="/cases/{{ c.case_id }}/report">report</a>
@@ -70,23 +74,33 @@ footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 14px;
 </section>
 
 <section>
-  <h2>Load a timeline</h2>
+  <h2>Analyze a file</h2>
   <div class="panel">
-    <p>Upload a Hayabusa CSV timeline. It is parsed read-only into the canonical schema and
-    rendered as a deterministic report. The file is never opened as a program, executed, or
-    fetched from anywhere: it is only read as CSV text. Only a <span class="mono">.csv</span>
-    is accepted, up to {{ max_upload_kib }} KiB.</p>
+    <p>Upload one tool-output file. It is parsed read-only into the canonical schema, enriched
+    deterministically, and rendered as a report of key findings with no language model. The file
+    is only ever read as text: it is never executed, and nothing is fetched on its behalf.</p>
     <form action="/upload" method="post" enctype="multipart/form-data">
-      <input type="file" name="file" accept=".csv,text/csv" required>
-      <button type="submit">Upload and analyze</button>
+      <label>Source
+        <select name="source" required>
+          {% for spec in sources %}
+          <option value="{{ spec.name }}">{{ spec.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <input type="file" name="file" accept="{{ accept }}" required>
+      <button type="submit">Analyze</button>
     </form>
+    <p class="hint">Up to {{ max_upload_kib }} KiB.
+    {% for spec in sources %}<span class="mono">{{ spec.name }}</span>: {{ spec.description }} ({{ spec.suffixes | join(", ") }}){{ "; " if not loop.last else "." }}
+    {% endfor %}
+    Raw <span class="mono">.evtx</span> and <span class="mono">$MFT</span> artifacts, generic CSV
+    with a column map, and model narratives are available from the command line.</p>
   </div>
 </section>
 
 <footer>
-  Casebound runs offline. The deterministic core needs no model and no network; any narrative
-  defaults to a local model so evidence stays on the host. This viewer fetches nothing at view
-  time and makes no outbound connection.
+  Casebound runs offline. The deterministic core needs no model and no network, and this viewer
+  fetches nothing at view time and makes no outbound connection.
 </footer>
 
 </div>

@@ -57,11 +57,29 @@ preserved under `details`.
 
 ## Usage
 
+From the command line, name the source and pass the map; generic CSV mixes with
+any other source in one case:
+
+```
+casebound report generic_csv:edr_export.csv --column-map edr.map.json -o out
+casebound report generic_csv:edr_export.csv hayabusa:timeline.csv -m edr.map.json -o out
+```
+
+From Python, through the shared pipeline:
+
 ```python
 from pathlib import Path
-from casebound.ingest import ColumnMap, GenericCsvAdapter
-from casebound.normalize import normalize_records
 
-column_map = ColumnMap.from_json(Path("my-source.map.json"))
-result = normalize_records(GenericCsvAdapter(column_map).read(Path("my-source.csv")))
+from casebound.ingest import ColumnMap
+from casebound.pipeline import EvidenceInput, analyze
+
+column_map = ColumnMap.from_json(Path("edr.map.json"))
+case = analyze(
+    [EvidenceInput("generic_csv", Path("edr_export.csv"), column_map=column_map)],
+    name="EDR export",
+)
 ```
+
+A generic CSV has no detection layer, so its events are tagged with ATT&CK by
+Casebound's documented mapping table (`casebound/enrich/attack.py`) from their
+canonical action and object.

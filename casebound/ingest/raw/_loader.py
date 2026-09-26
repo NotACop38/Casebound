@@ -14,19 +14,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from casebound.ingest.base import RawModeDependencyError
+
 __all__ = ["RawModeDependencyError", "load_evtx_class", "load_mft_class"]
 
 # How to obtain the optional dependency, named in every error so the fix is one
 # copy-paste away. Dissect is intentionally not a core dependency (decision D2).
 _INSTALL_HINT = 'install the optional raw extra: pip install "casebound[raw]"'
-
-
-class RawModeDependencyError(ImportError):
-    """Raised when raw-mode parsing is invoked without Dissect installed.
-
-    Subclasses ``ImportError`` so callers can catch it naturally. The message
-    names the optional extra to install.
-    """
 
 
 def load_evtx_class() -> Any:

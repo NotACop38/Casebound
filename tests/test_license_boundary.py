@@ -7,17 +7,22 @@ coexist is isolation: Dissect, and the subpackage that uses it
 
 This test proves that in code, not just in prose. It parses every module under
 ``casebound/`` except the raw subpackage (the sanctioned AGPL zone) and fails if
-any of them import Dissect (``dissect`` or ``dissect.*``) or the raw subpackage
-(``casebound.ingest.raw`` or a submodule). It also confirms, from pyproject, that
-Dissect is not a core dependency and is declared only under the ``raw`` optional
-extra, and that the raw zone really does depend on Dissect (so the scan is not
-vacuous).
+any of them import Dissect (``dissect`` or ``dissect.*``) anywhere, or import the
+raw subpackage (``casebound.ingest.raw`` or a submodule) anywhere but the one
+sanctioned gateway: a function body in the source registry
+(``casebound/sources.py``), which runs only when an operator selects a raw source.
+A subprocess check then confirms the real import graph: loading the CLI, the
+pipeline, the reports, the registry, and a tool-output adapter leaves both
+Dissect and the raw subpackage out of ``sys.modules``. The test also confirms,
+from pyproject, that Dissect is not a core dependency and is declared only under
+the ``raw`` optional extra, and that the raw zone really does depend on Dissect
+(so the scan is not vacuous).
 
 The result: a default ``pip install casebound`` and the entire core pipeline (the
 demo, ingest of tool output, normalize, enrich, verify, narrate, report) pull in
-and load no AGPL code. Only an explicit ``pip install "casebound[raw]"`` plus a
-direct call into the raw adapters brings Dissect in, which the raw subpackage's
-own documentation flags as subject to AGPL-3.0.
+and load no AGPL code. Only an explicit ``pip install "casebound[raw]"`` plus
+selecting a raw source brings Dissect in, which the raw subpackage's own
+documentation flags as subject to AGPL-3.0.
 
 No network, no API keys.
 """
@@ -25,6 +30,8 @@ No network, no API keys.
 from __future__ import annotations
 
 import ast
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -37,6 +44,8 @@ PACKAGE_DIR = ROOT / "casebound"
 # The single sanctioned AGPL zone: the only place allowed to depend on Dissect.
 AGPL_ZONE = PACKAGE_DIR / "ingest" / "raw"
 PYPROJECT = ROOT / "pyproject.toml"
+# The one core module allowed to load the raw subpackage, and only lazily.
+RAW_GATEWAY = PACKAGE_DIR / "sources.py"
 
 # Dotted import namespaces that would put AGPL code on a module's import graph.
 # Mapped to the reason, mirroring the defensive-scope invariant's style.
@@ -54,28 +63,39 @@ def _is_agpl(dotted: str) -> str | None:
     return None
 
 
-def _imported_names(tree: ast.AST) -> list[tuple[int, str]]:
-    """Collect (lineno, fully-qualified-dotted-name) for every absolute import.
+def _imports_with_scope(tree: ast.AST) -> list[tuple[int, str, bool]]:
+    """Collect (lineno, fully-qualified-dotted-name, in_function) for every import.
 
     Names are always fully qualified, so a local module merely named ``dissect``
     (for example ``casebound.normalize.mappers.dissect``) is never confused with
     the Dissect library. Relative imports stay inside their own package and are
-    skipped.
+    skipped. ``in_function`` is True for an import inside a function body, which
+    runs only when that function is called.
     """
-    found: list[tuple[int, str]] = []
-    for node in ast.walk(tree):
+    found: list[tuple[int, str, bool]] = []
+
+    def visit(node: ast.AST, in_function: bool) -> None:
         if isinstance(node, ast.Import):
             for alias in node.names:
-                found.append((node.lineno, alias.name))
-        elif isinstance(node, ast.ImportFrom):
-            if node.level:  # relative import; not an absolute cross-package link
-                continue
+                found.append((node.lineno, alias.name, in_function))
+        elif isinstance(node, ast.ImportFrom) and not node.level:
             module = node.module or ""
             if module:
-                found.append((node.lineno, module))
+                found.append((node.lineno, module, in_function))
             for alias in node.names:
-                found.append((node.lineno, f"{module}.{alias.name}" if module else alias.name))
+                name = f"{module}.{alias.name}" if module else alias.name
+                found.append((node.lineno, name, in_function))
+        nested = in_function or isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        for child in ast.iter_child_nodes(node):
+            visit(child, nested)
+
+    visit(tree, False)
     return found
+
+
+def _imported_names(tree: ast.AST) -> list[tuple[int, str]]:
+    """Collect (lineno, fully-qualified-dotted-name) for every absolute import."""
+    return [(lineno, name) for lineno, name, _ in _imports_with_scope(tree)]
 
 
 def _core_files() -> list[Path]:
@@ -86,11 +106,18 @@ def _core_files() -> list[Path]:
 def _scan(path: Path) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     findings: list[str] = []
-    for lineno, dotted in _imported_names(tree):
+    for lineno, dotted, in_function in _imports_with_scope(tree):
         reason = _is_agpl(dotted)
-        if reason is not None:
+        if reason is None:
+            continue
+        lazy_gateway = path == RAW_GATEWAY and in_function and not _is_agpl_library(dotted)
+        if not lazy_gateway:
             findings.append(f"{path.relative_to(ROOT)}:{lineno}: imports {dotted!r} which {reason}")
     return findings
+
+
+def _is_agpl_library(dotted: str) -> bool:
+    return dotted == "dissect" or dotted.startswith("dissect.")
 
 
 def test_core_files_present() -> None:
@@ -129,6 +156,38 @@ def test_scanner_detects_boundary_violations() -> None:
     assert "casebound.normalize.mappers.dissect" not in findings
 
 
+def test_gateway_may_not_load_the_raw_subpackage_at_module_level(tmp_path: Path) -> None:
+    # The registry's exemption covers function bodies only: a module-level import
+    # there would load the AGPL zone for every command.
+    module_level = "from casebound.ingest.raw import DissectEvtxAdapter\n"
+    lazy = "def build():\n    from casebound.ingest.raw import DissectEvtxAdapter\n"
+    scopes = {
+        name: [in_fn for _, _, in_fn in _imports_with_scope(ast.parse(source))]
+        for name, source in (("module_level", module_level), ("lazy", lazy))
+    }
+    assert scopes["module_level"] and not any(scopes["module_level"])
+    assert scopes["lazy"] and all(scopes["lazy"])
+
+
+def test_default_import_graph_loads_no_agpl_code() -> None:
+    # The real graph, in a fresh interpreter: everything a default run imports,
+    # including building a tool-output adapter through the registry.
+    probe = (
+        "import sys\n"
+        "import casebound.cli, casebound.pipeline, casebound.report, casebound.sources\n"
+        "import casebound.evaluation, casebound.narrate.llm\n"
+        "from casebound.sources import build_adapter\n"
+        "build_adapter('hayabusa'); build_adapter('plaso')\n"
+        "loaded = sorted(m for m in sys.modules\n"
+        "                if m == 'dissect' or m.startswith(('dissect.', 'casebound.ingest.raw')))\n"
+        "print(','.join(loaded))\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True, cwd=ROOT
+    )
+    assert result.stdout.strip() == "", f"AGPL modules loaded: {result.stdout.strip()}"
+
+
 def test_raw_zone_actually_depends_on_dissect() -> None:
     # Sanity: the isolation is real. The AGPL zone must import Dissect somewhere, so
     # the scan above is meaningfully distinguishing the zone from the core.
@@ -159,4 +218,4 @@ def test_pyproject_keeps_dissect_optional() -> None:
         "the 'raw' optional extra must declare Dissect"
     )
     # The declared license posture stays Apache-2.0 for the core.
-    assert project.get("license", {}).get("text") == "Apache-2.0"
+    assert project.get("license") == "Apache-2.0"

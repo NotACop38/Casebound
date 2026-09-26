@@ -6,11 +6,9 @@ in this repository (Hard rule 3): no real hostnames, no real IOCs, no working
 payloads.
 
 Layout (PRD Section 13):
-  - ``synth``     : renders a scenario into Hayabusa-style CSV plus a ground-truth
-                    label file, deterministically from a seed.
+  - ``synth``     : renders a scenario as a Hayabusa verbose csv-timeline plus a
+                    ground-truth label file, deterministically from a seed.
   - ``scenarios`` : the ground-truth scenario definitions.
-
-The hallucination-trap fixture (FR35) lands in a later Phase 1 step.
 """
 
 from __future__ import annotations

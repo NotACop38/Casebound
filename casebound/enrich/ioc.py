@@ -49,7 +49,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
 from casebound.normalize.schema import Event
 
@@ -92,6 +92,15 @@ _IPV4_RE = re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]
 _PATH_STOP = r"\s\"'<>|¦,;+"
 _DRIVE_PATH_RE = re.compile(rf"[A-Za-z]:\\[^{_PATH_STOP}]+")
 _UNC_PATH_RE = re.compile(rf"\\\\[^{_PATH_STOP}]+")
+
+# A double-quoted path, the way a command line or a service ImagePath protects a
+# path that contains spaces ("C:\Program Files (x86)\...\app.exe" /svc). The
+# quotes delimit the whole path, so it is taken first and in full.
+_QUOTED_PATH_RE = re.compile(r'"((?:[A-Za-z]:\\|\\\\)[^"<>|\r\n]+)"')
+
+# Loopback and unspecified addresses say nothing about where activity came from or
+# went, so they are not reported as indicators.
+_NON_INDICATOR_IPS_RE = re.compile(r"^(?:127\.\d{1,3}\.\d{1,3}\.\d{1,3}|0\.0\.0\.0)$")
 
 # A hostname with at least one dot and an alphabetic top-level label.
 _DOMAIN_RE = re.compile(r"\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}\b")
@@ -209,7 +218,7 @@ class IocSet:
 
     iocs: tuple[Ioc, ...] = ()
 
-    def __iter__(self):  # type: ignore[no-untyped-def]
+    def __iter__(self) -> Iterator[Ioc]:
         return iter(self.iocs)
 
     def __len__(self) -> int:
@@ -231,10 +240,16 @@ class IocSet:
 
 @dataclass
 class _Bucket:
-    """Internal accumulator for one indicator while extracting: its id and refs."""
+    """Internal accumulator for one indicator while extracting.
+
+    ``spellings`` collects every way the evidence wrote the indicator (paths differ
+    only in case on Windows), and ``event_ids`` the referencing events in first-seen
+    order.
+    """
 
     ioc_id: str
     event_ids: list[str]
+    spellings: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -275,14 +290,25 @@ def _compute_ioc_id(ioc_type: str, value: str) -> str:
 
 
 def _normalize_value(ioc_type: str, value: str) -> str:
-    """Canonicalize an indicator for de-duplication.
+    """Canonicalize an indicator for display: domains and hashes are lowercased.
 
-    Domains and hashes are case-insensitive, so they are lowercased; an IP or a
-    path is kept verbatim.
+    An IP or a path is kept as the evidence wrote it.
     """
     if ioc_type in (IOC_TYPE_DOMAIN, IOC_TYPE_HASH):
         return value.lower()
     return value
+
+
+def _dedup_key(ioc_type: str, value: str) -> str:
+    """The identity of an indicator for de-duplication.
+
+    Domains and hashes are case-insensitive. Windows paths are too, and a trailing
+    backslash does not change the directory named, so ``C:\\Windows\\System32\\``
+    and ``C:\\windows\\system32`` are one indicator.
+    """
+    if ioc_type == IOC_TYPE_PATH:
+        return value.rstrip("\\").casefold() or value
+    return _normalize_value(ioc_type, value)
 
 
 # A value that is one whole path: a drive-letter or UNC prefix followed only by
@@ -327,6 +353,12 @@ def _candidates_from_value(value: str) -> list[tuple[str, str]]:
 
     found: list[tuple[str, str]] = []
     work = stripped
+    chars = list(work)
+    for match in _QUOTED_PATH_RE.finditer(work):
+        found.append((IOC_TYPE_PATH, match.group(1)))
+        for index in range(match.start(), match.end()):
+            chars[index] = " "
+    work = "".join(chars)
     work = _blank_spans(work, _DRIVE_PATH_RE, found, IOC_TYPE_PATH)
     work = _blank_spans(work, _UNC_PATH_RE, found, IOC_TYPE_PATH)
     work = _blank_spans(work, _HASH_RE, found, IOC_TYPE_HASH)
@@ -340,7 +372,11 @@ def _candidates_from_value(value: str) -> list[tuple[str, str]]:
             if candidate.rsplit(".", 1)[-1].lower() in _FILE_EXTENSIONS:
                 continue
             found.append((IOC_TYPE_DOMAIN, candidate))
-    return found
+    return [
+        (ioc_type, raw)
+        for ioc_type, raw in found
+        if not (ioc_type == IOC_TYPE_IP and _NON_INDICATOR_IPS_RE.match(raw))
+    ]
 
 
 def find_indicators(value: str) -> list[tuple[str, str]]:
@@ -396,14 +432,15 @@ def extract_iocs(events: Iterable[Event]) -> IocExtraction:
         seen_here: set[str] = set()
         for source in _event_strings(event):
             for ioc_type, raw in _candidates_from_value(source):
-                normalized = _normalize_value(ioc_type, raw)
-                key = (ioc_type, normalized)
-                ioc_id = _compute_ioc_id(ioc_type, normalized)
+                dedup = _dedup_key(ioc_type, raw)
+                key = (ioc_type, dedup)
+                ioc_id = _compute_ioc_id(ioc_type, dedup)
                 bucket = by_value.get(key)
                 if bucket is None:
-                    by_value[key] = _Bucket(ioc_id=ioc_id, event_ids=[event.event_id])
+                    bucket = by_value[key] = _Bucket(ioc_id=ioc_id, event_ids=[event.event_id])
                 elif event.event_id not in bucket.event_ids:
                     bucket.event_ids.append(event.event_id)
+                bucket.spellings.add(_normalize_value(ioc_type, raw))
                 if ioc_id not in seen_here:
                     seen_here.add(ioc_id)
                     refs_by_event.setdefault(event.event_id, []).append(ioc_id)
@@ -411,16 +448,18 @@ def extract_iocs(events: Iterable[Event]) -> IocExtraction:
     order_index = {event.event_id: position for position, event in enumerate(materialized)}
 
     iocs: list[Ioc] = []
-    for (ioc_type, normalized), bucket in by_value.items():
+    for (ioc_type, _dedup), bucket in by_value.items():
         ordered_ids = tuple(
             sorted(bucket.event_ids, key=lambda eid: order_index.get(eid, len(order_index)))
         )
+        # One display spelling, chosen independently of input order.
+        value = min(bucket.spellings)
         iocs.append(
             Ioc(
                 ioc_id=bucket.ioc_id,
                 ioc_type=ioc_type,
-                value=normalized,
-                defanged=defang(normalized, ioc_type),
+                value=value,
+                defanged=defang(value, ioc_type),
                 event_ids=ordered_ids,
             )
         )

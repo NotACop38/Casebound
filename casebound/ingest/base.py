@@ -26,7 +26,23 @@ from typing import Any, ClassVar
 
 from casebound.normalize.schema import SOURCE_TOOLS, RawRef
 
-__all__ = ["IngestAdapter", "RawRecord", "coerce_row", "scalar_to_str"]
+__all__ = [
+    "IngestAdapter",
+    "RawModeDependencyError",
+    "RawRecord",
+    "coerce_row",
+    "scalar_to_str",
+]
+
+
+class RawModeDependencyError(ImportError):
+    """Raised when a raw-artifact source is read without its optional extra installed.
+
+    Defined in the core (not in the license-gated ``casebound.ingest.raw``) so the
+    command line can catch it without importing that subpackage. The message names
+    the extra to install. Subclasses ``ImportError`` so callers can catch it
+    naturally.
+    """
 
 
 def coerce_row(row: Mapping[str, str | None]) -> dict[str, str]:

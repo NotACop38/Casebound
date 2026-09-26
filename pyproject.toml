@@ -1,86 +1,105 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "casebound"
-version = "0.1.0"
-description = "Local-first DFIR investigation copilot whose AI narrative cannot invent facts."
+version = "0.2.0"
+description = "Offline DFIR case reports whose narrative is verified, claim by claim, against the evidence timeline."
 readme = "README.md"
 requires-python = ">=3.11"
-# D2 (PRD Section 17) is signed off: Apache-2.0 for the core, LICENSE committed.
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "Casebound contributors" }]
 keywords = [
     "dfir",
     "incident-response",
     "digital-forensics",
     "forensic-timeline",
+    "hayabusa",
     "mitre-attack",
     "grounded-generation",
     "llm",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
     "Intended Audience :: Information Technology",
-    "License :: OSI Approved :: Apache Software License",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Security",
+    "Typing :: Typed",
 ]
 
-# Runtime dependencies. Pinned for reproducible offline builds.
+# Runtime dependencies, pinned for reproducible offline installs. The deterministic
+# core needs nothing else: no model SDK, no web framework, no network client.
 dependencies = [
-    "typer==0.26.7",
-    "rich==15.0.0",
+    "typer==0.27.2",
     "jinja2==3.1.6",
     "jsonschema==4.26.0",
     "python-dateutil==2.9.0.post0",
 ]
 
 [project.optional-dependencies]
-# Optional raw-artifact mode (PRD Section 5, decision D2). Dissect is AGPL-3.0, so
-# it is deliberately NOT a core dependency: it is opt-in here and isolated to
-# casebound/ingest/raw so the core stays Apache-2.0 with no AGPL code on its import
-# path. Installing this extra (pip install "casebound[raw]") and using raw mode
-# brings AGPL-3.0 code into the assembled work, which is then subject to its terms.
-# The license boundary is enforced by tests/test_license_boundary.py.
+# Narrative providers (all optional; the deterministic report needs none). The
+# local provider talks to an OpenAI-compatible server on this host (Ollama,
+# llama.cpp, vLLM, LM Studio) through the openai client, so 'local' and 'openai'
+# install the same package. SDKs are imported lazily, only when a provider is used.
+local = ["openai==3.19.2"]
+openai = ["openai==3.19.2"]
+anthropic = ["anthropic==1.8.0"]
+# Raw-artifact mode (decision D2). Dissect is AGPL-3.0, so it is deliberately not a
+# core dependency: it is opt-in here and isolated to casebound/ingest/raw, loaded
+# only through casebound/sources.py when an operator selects a raw source, so the
+# core stays Apache-2.0 with no AGPL code on its import path. Installing this extra
+# and using raw mode brings AGPL-3.0 code into the assembled work, which is then
+# subject to its terms. tests/test_license_boundary.py enforces the boundary.
 raw = [
     "dissect.eventlog==3.11",
     "dissect.ntfs==3.16",
 ]
-# Optional web UI (PRD Section 8 and decision D4, Phase 9). The browsable timeline
-# and report viewer is an opt-in stretch feature, so its server dependencies are
-# deliberately NOT core: a default install pulls in no web framework and the
-# offline deterministic core is unchanged. The viewer reuses the report layer
-# unchanged and serves on loopback only; it never fetches or opens anything.
-# Note: this extra installs the server dependencies only. The viewer package
-# itself (web/) ships in the repository and the sdist, not the wheel, so the
-# web UI runs from a source tree (the documented 'pip install -e ".[web]"' plus
-# 'make web' flow), keeping the generic top-level 'web' name out of installed
-# site-packages.
+# The optional local web viewer (decision D4): 'casebound serve'. It reuses the
+# pipeline and the report layer unchanged, binds loopback by default, and never
+# fetches anything, so a default install pulls in no web framework.
 web = [
-    "fastapi==0.136.3",
-    "uvicorn==0.49.0",
+    "fastapi==0.141.1",
+    "uvicorn==0.54.0",
     "python-multipart==0.0.32",
 ]
-# Pinned dev toolchain. Keep in lockstep with the CI gate (scripts/ci.py). The web
-# extra and httpx are included so the gate installs the optional web UI and its
-# in-process test client, exercising the Phase 9 tests rather than skipping them.
+# The pinned development toolchain, kept in lockstep with the gate (scripts/ci.py).
+# It includes the web extra and its in-process test client so the gate exercises
+# the viewer's tests instead of skipping them, and both provider SDKs so the
+# provider tests run against the real client types (no network is used).
 dev = [
-    "pytest==9.0.3",
-    "ruff==0.15.8",
-    "mypy==1.19.1",
-    "pre-commit==4.6.0",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "hypothesis==6.168.1",
+    "ruff==0.16.9",
+    "mypy==2.3.1",
+    "pre-commit==4.6.2",
     "bandit==1.9.4",
-    "pip-audit==2.10.0",
+    "pip-audit==2.10.1",
     "detect-secrets==1.5.0",
-    "types-python-dateutil==2.9.0.20260518",
+    "types-python-dateutil==2.9.0.20260807",
     "types-jsonschema==4.26.0.20260518",
-    "fastapi==0.136.3",
-    "uvicorn==0.49.0",
+    "fastapi==0.141.1",
+    "uvicorn==0.54.0",
     "python-multipart==0.0.32",
-    "httpx==0.28.1",
+    "httpx2==2.13.1",
+    "anthropic==1.8.0",
+    "openai==3.19.2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/NotACop38/Casebound"
+Documentation = "https://github.com/NotACop38/Casebound/tree/main/docs"
+Changelog = "https://github.com/NotACop38/Casebound/blob/main/CHANGELOG.md"
+Issues = "https://github.com/NotACop38/Casebound/issues"
 
 [project.scripts]
 casebound = "casebound.cli:app"
@@ -89,18 +108,19 @@ casebound = "casebound.cli:app"
 include = ["casebound*"]
 
 [tool.setuptools.package-data]
-# The HTML report template is loaded from the installed package at runtime, so it
-# must ship inside the wheel and sdist; without this a non-editable install would
-# omit it and render_report would raise TemplateNotFound.
+# Loaded from the installed package at runtime, so they must ship in the wheel:
+# the event and claim schemas and the bundled ATT&CK catalog, the report template,
+# the web viewer's templates, and the PEP 561 marker.
+"casebound" = ["py.typed", "data/*.json"]
 "casebound.report" = ["templates/*.j2"]
+"casebound.web" = ["templates/*.j2"]
 
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-src = ["casebound", "scripts", "tests", "web"]
+src = ["."]
 
 [tool.ruff.lint]
-# A pragmatic, strict-ish default set. Expand as the codebase grows.
 select = [
     "E",   # pycodestyle errors
     "F",   # pyflakes
@@ -112,6 +132,9 @@ select = [
     "SIM", # flake8-simplify
     "RUF", # ruff-specific
 ]
+
+[tool.ruff.lint.isort]
+known-first-party = ["casebound"]
 
 [tool.ruff.lint.flake8-bugbear]
 # Typer and FastAPI both declare parameters with calls in argument defaults by
@@ -126,7 +149,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 disallow_untyped_defs = true
 no_implicit_reexport = true
-files = ["casebound", "scripts", "tests", "web"]
+files = ["casebound", "scripts", "tests"]
 
 [[tool.mypy.overrides]]
 # Dissect is an optional, AGPL-gated dependency (raw mode, decision D2). It is not
@@ -137,17 +160,28 @@ module = ["dissect.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-minversion = "8.0"
+minversion = "9.0"
 testpaths = ["tests"]
-addopts = "-ra -q"
+addopts = "-ra -q --strict-markers --strict-config"
+xfail_strict = true
 # Keep the suite hermetic: no network, no API keys.
 markers = [
     "invariant: defensive-scope invariant tests (PRD Section 6, Hard rule 1); run as a named step by 'make security'.",
 ]
-# Silence one known upstream deprecation: Starlette's TestClient warns that it uses
-# httpx rather than httpx2 (pinned starlette 1.2.1 plus httpx 0.28.1). It is internal
-# to the test client and nothing we control, so the message is ignored narrowly,
-# scoped to that exact text so a real deprecation in our own code is never hidden.
-filterwarnings = [
-    "ignore:Using .httpx. with .starlette.testclient. is deprecated",
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["casebound"]
+branch = true
+# The raw adapters need the optional AGPL extra, which the gate does not install;
+# their pure logic is tested through fakes in tests/test_dissect_raw.py.
+omit = ["casebound/ingest/raw/_loader.py", "casebound/web/__main__.py"]
+
+[tool.coverage.report]
+show_missing = false
+skip_covered = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
 ]

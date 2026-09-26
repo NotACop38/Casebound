@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """Casebound local CI gate.
 
-Runs the offline quality checks that every later step can rely on:
+Runs the offline quality checks every change must pass:
 
   1. ruff check   : lint
   2. ruff format  : format check
-  3. mypy         : strict-ish type check
-  4. pytest       : the test suite (no network, no API keys)
-  5. schema       : JSON Schema validation (placeholder until the schema exists)
-  6. secrets      : a secret scan over git-tracked files (detect-secrets)
-  7. bandit       : a static security scan over the first-party Python code
-  8. deps         : a dependency audit of the declared dependencies (pip-audit)
+  3. mypy         : strict type check
+  4. pytest       : the test suite (no network, no API keys) with a coverage floor
+  5. schema       : the event and claim schemas are valid JSON Schema, and every
+                    worked example validates against the event schema
+  6. style        : no em dash or en dash in any tracked or new text file (AGENTS.md)
+  7. secrets      : a secret scan over tracked and new files (detect-secrets)
+  8. bandit       : a static security scan over the first-party Python code
+  9. deps         : a dependency audit of the declared dependencies (pip-audit)
 
 Every step except the dependency audit runs fully offline with no API keys. The
 dependency audit reaches the advisory service when online and skips gracefully
@@ -24,10 +26,10 @@ Exit code is 0 only if every step passes.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
-import shutil
 import subprocess  # nosec B404
 import sys
 import tempfile
@@ -35,10 +37,17 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SCHEMA_PATH = ROOT / "schema" / "event.schema.json"
-SCHEMA_EXAMPLES_DIR = ROOT / "schema" / "examples"
+SCHEMA_PATH = ROOT / "casebound" / "data" / "event.schema.json"
+CLAIMS_SCHEMA_PATH = ROOT / "casebound" / "data" / "claims.schema.json"
+SCHEMA_EXAMPLES_DIR = ROOT / "docs" / "examples"
 BASELINE = ROOT / ".secrets.baseline"
 PYPROJECT = ROOT / "pyproject.toml"
+
+# The line coverage the test suite must reach over the casebound package.
+COVERAGE_FLOOR = 93
+
+# The characters the house style bans everywhere (AGENTS.md Hard rule 5).
+BANNED_DASHES = {"\u2014": "em dash", "\u2013": "en dash"}
 
 # A completed dependency audit prints this header when it has real findings. Any
 # other non-zero outcome means the audit could not run (offline, pip-audit absent,
@@ -79,43 +88,48 @@ def run_cmd(name: str, cmd: list[str]) -> bool:
 
 
 def check_schema() -> bool:
-    """Validate the canonical event schema and every committed example against it.
+    """Validate the bundled schemas and every worked example.
 
-    First confirms the schema document is itself a valid JSON Schema, then loads
-    every instance under schema/examples/ and validates it against the schema, so
-    the keystone record and its worked examples can never drift apart silently.
+    Confirms the event schema and the claim schema are themselves valid JSON
+    Schema, then validates every instance under docs/examples/ against the event
+    schema, so the keystone record and its worked examples cannot drift apart.
     """
     _print_header("schema (JSON Schema validation)")
-    if not SCHEMA_PATH.exists():
-        print(f"SKIP: {SCHEMA_PATH.relative_to(ROOT)} not present yet (placeholder).")
-        return True
-    try:
-        from jsonschema import Draft202012Validator
+    from jsonschema import Draft202012Validator
 
-        schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-        Draft202012Validator.check_schema(schema)
-    except Exception as exc:  # report any schema problem as a failure
-        print(f"FAIL: {SCHEMA_PATH.relative_to(ROOT)} is not a valid JSON Schema: {exc}")
+    schemas: dict[Path, dict[str, object]] = {}
+    for path in (SCHEMA_PATH, CLAIMS_SCHEMA_PATH):
+        try:
+            schemas[path] = json.loads(path.read_text(encoding="utf-8"))
+            Draft202012Validator.check_schema(schemas[path])
+        except Exception as exc:  # report any schema problem as a failure
+            print(f"FAIL: {path.relative_to(ROOT)} is not a valid JSON Schema: {exc}")
+            return False
+
+    validator = Draft202012Validator(schemas[SCHEMA_PATH])
+    examples = sorted(SCHEMA_EXAMPLES_DIR.glob("*.json"))
+    if not examples:
+        print(f"FAIL: no worked examples under {SCHEMA_EXAMPLES_DIR.relative_to(ROOT)}")
         return False
-
-    validator = Draft202012Validator(schema)
-    examples = sorted(SCHEMA_EXAMPLES_DIR.glob("*.json")) if SCHEMA_EXAMPLES_DIR.exists() else []
     for example in examples:
         try:
-            instance = json.loads(example.read_text(encoding="utf-8"))
-            validator.validate(instance)
+            validator.validate(json.loads(example.read_text(encoding="utf-8")))
         except Exception as exc:  # a non-conforming example is a failure
             print(f"FAIL: {example.relative_to(ROOT)} does not validate: {exc}")
             return False
 
-    print(f"PASS ({len(examples)} example(s) validated)")
+    print(f"PASS (2 schemas, {len(examples)} example(s) validated)")
     return True
 
 
 def _git_tracked_files() -> list[Path]:
+    """Every tracked file plus every new file git does not ignore.
+
+    New files are included so the gate catches a problem before the first commit.
+    """
     # Fixed git invocation, no untrusted input.
     result = subprocess.run(  # nosec B603 B607
-        ["git", "ls-files"],
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -147,7 +161,35 @@ def _builtin_secret_scan(files: list[Path]) -> bool:
         for finding in findings:
             print(f"  - {finding}")
         return False
-    print(f"PASS (built-in scan, {len(files)} files)")
+    print(
+        f"PASS (built-in fallback scan, {len(files)} files; "
+        "detect-secrets is not installed for this interpreter)"
+    )
+    return True
+
+
+def check_style() -> bool:
+    """Fail on any em dash or en dash in a tracked or new text file (AGENTS.md)."""
+    _print_header("style (no em dashes or en dashes)")
+    findings: list[str] = []
+    files = _git_tracked_files()
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue  # binary files (images) carry no prose
+        for number, line in enumerate(text.splitlines(), start=1):
+            for char, label in BANNED_DASHES.items():
+                if char in line:
+                    findings.append(f"{path.relative_to(ROOT)}:{number}: {label}")
+    if findings:
+        print("FAIL: banned dash characters found:")
+        for finding in findings[:50]:
+            print(f"  - {finding}")
+        if len(findings) > 50:
+            print(f"  and {len(findings) - 50} more")
+        return False
+    print(f"PASS ({len(files)} files)")
     return True
 
 
@@ -155,14 +197,23 @@ def check_secrets() -> bool:
     """Scan tracked files for secrets, preferring detect-secrets when available."""
     _print_header("secrets (secret scan)")
     files = _git_tracked_files()
-    if shutil.which("detect-secrets-hook") and BASELINE.exists():
+    # Resolve detect-secrets through the interpreter running the gate, like every
+    # other tool here, so an unactivated virtualenv still gets the full scan rather
+    # than whatever is (or is not) on PATH.
+    if importlib.util.find_spec("detect_secrets") is not None and BASELINE.exists():
         # Pass the baseline as a repo-relative path so it matches its own entry in
         # the file list below (the subprocess runs with cwd=ROOT). With an absolute
         # path the hook does not recognize the baseline among the scanned files and
         # scans it as ordinary content, flagging the hashed_secret values it stores.
-        cmd = ["detect-secrets-hook", "--baseline", str(BASELINE.relative_to(ROOT))]
+        cmd = [
+            sys.executable,
+            "-m",
+            "detect_secrets.pre_commit_hook",
+            "--baseline",
+            str(BASELINE.relative_to(ROOT)),
+        ]
         cmd.extend(str(p.relative_to(ROOT)) for p in files)
-        # Fixed tool name plus tracked file paths; no shell, no untrusted input.
+        # Fixed module name plus tracked file paths; no shell, no untrusted input.
         result = subprocess.run(cmd, cwd=ROOT)  # nosec B603
         ok = result.returncode == 0
         print("PASS (detect-secrets)" if ok else f"FAIL (exit {result.returncode})")
@@ -263,8 +314,24 @@ def main() -> int:
         )
     )
     results.append(("mypy", run_cmd("mypy (types)", [py, "-m", "mypy"])))
-    results.append(("pytest", run_cmd("pytest (tests)", [py, "-m", "pytest"])))
+    results.append(
+        (
+            "pytest",
+            run_cmd(
+                f"pytest (tests, coverage floor {COVERAGE_FLOOR}%)",
+                [
+                    py,
+                    "-m",
+                    "pytest",
+                    "--cov",
+                    "--cov-report=term",
+                    f"--cov-fail-under={COVERAGE_FLOOR}",
+                ],
+            ),
+        )
+    )
     results.append(("schema", check_schema()))
+    results.append(("style", check_style()))
     results.append(("secrets", check_secrets()))
     results.append(("bandit", check_bandit()))
     results.append(("dependency audit", check_dependency_audit()))

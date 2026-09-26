@@ -1,81 +1,73 @@
 # Security policy
 
-> Style: no em dashes or en dashes anywhere. Use hyphens, colons, or commas.
-
-Casebound is a local-first DFIR investigation copilot. This policy states its
-defensive scope and non-goals, the guarantees it upholds, how those are enforced,
-and how to report a vulnerability. It restates PRD Section 6 and the Hard rules in
-AGENTS.md. The full threat model lives in `docs/threat-model.md`.
+Casebound performs read-only analysis of evidence that has already been collected.
+This policy states its defensive scope, the guarantees it keeps, how they are
+enforced, and how to report a vulnerability. It restates PRD Section 6 and the Hard
+rules in [`AGENTS.md`](AGENTS.md); the full threat model is
+[`docs/threat-model.md`](docs/threat-model.md).
 
 ## Supported versions
 
-Casebound is pre-1.0 (0.1.x). Security fixes target the latest released 0.1.x and
-the `main` branch.
+Casebound is pre-1.0. Security fixes land on `main` and in the latest release.
 
 | Version | Supported |
 | --- | --- |
-| 0.1.x | yes |
-| < 0.1 | no |
+| 0.2.x | yes |
+| 0.1.x and earlier | no |
 
-## Defensive scope and non-goals
+## Scope
 
-Casebound performs read-only analysis of evidence that has already been collected.
-It is built to be employer-safe and stays inside these lines:
-
-- Read-only analysis only. Casebound never performs acquisition that modifies an
-  endpoint, never collects remotely, and never takes remediation or containment
-  action.
-- No detonation, no sandboxing, and no execution of suspect binaries.
-- Evidence never leaves the host by default. Any cloud-model path is opt-in, gated
-  by an explicit flag, and preceded by a redaction pass.
-- The repository ships synthetic or public sample evidence only. No real case data,
-  ever, and no committed secrets.
-- Casebound is not an EDR, a SIEM, an acquisition tool, or a malware sandbox. It
-  assists a qualified analyst; it does not replace one.
+- Read-only analysis only: no acquisition that modifies an endpoint, no remote
+  collection, no remediation or containment.
+- No detonation, no sandboxing, no execution of anything ingested.
+- Evidence stays on the host by default. The deterministic core is offline, the
+  demo narrates with a scripted offline drafter, and the recommended narrative
+  provider is a model on the same host. A cloud provider is opt-in behind an
+  explicit flag and receives only a redacted event view.
+- The repository ships synthetic sample evidence only, and no secrets.
+- Casebound is not an EDR, a SIEM, an acquisition tool, or a sandbox. It assists a
+  qualified analyst; it does not replace one.
 
 ## Guarantees
 
-- The verification guarantee. No factual claim reaches a report unless it resolves
-  to a real, deterministically extracted timeline event and its asserted facts
-  (time, principal, action, object) are consistent with that event. The model is a
-  drafting aid fenced by the deterministic verifier; it never decides what is true.
-- Evidence sovereignty. The deterministic core runs fully offline. The narrative
-  defaults to a local model. Cloud use is opt-in only and is redacted first.
-- Key hygiene. API keys are excluded from provider reprs and are never logged or
-  written to any output.
+- **Verification.** No factual claim reaches a report unless it cites a real,
+  deterministically extracted event and every fact it asserts (time, principal,
+  action, object) matches that event. The reader sees sentences composed from the
+  event's own fields, never the model's prose.
+- **Evidence sovereignty.** No default path opens a network connection.
+- **Key hygiene.** API keys never appear in provider reprs, reports, logs, or error
+  messages; SDK errors are scrubbed of anything key-shaped before they are shown.
+- **License isolation.** The Apache-2.0 core never loads the optional AGPL-3.0
+  Dissect code unless an operator installs the `raw` extra and selects a raw source.
 
-## How the scope is enforced
+## Enforcement
 
-These invariants run in `make ci` (the gate) and again, as a named step, in
-`make security`:
+Every item below runs in `make ci`, the gate that CI runs on Python 3.11, 3.12,
+and 3.13; `make security` runs the gate and then the invariant tests again as a
+named step.
 
-- `tests/test_defensive_scope.py` parses every module under `casebound/` and fails
-  if any of them import or call a process-execution, remote-collection,
-  network-egress, registry, or native-API primitive. The only sanctioned egress is
-  the opt-in, redacted cloud provider SDK, imported lazily in `narrate/llm.py`.
-- `tests/test_no_egress.py` proves the no-key demo path opens no outbound network
-  connection.
-- `tests/test_redact.py` proves the redaction pass strips sensitive fields and that
-  keys never appear in outputs before any cloud call.
-
-`make security` also runs the secret scan, the bandit static analysis, and the
-dependency audit. See `docs/threat-model.md` for the full model.
+| Test or check | Proves |
+| --- | --- |
+| `tests/test_defensive_scope.py` | No module under `casebound/` imports or calls a process-execution, network, remote-execution, live-registry, or native-API primitive. The only sanctioned egress is a provider SDK, imported lazily by name in `casebound/narrate/llm.py`. |
+| `tests/test_no_egress.py` | The library, `report`, `demo`, `verify`, and the web viewer complete with outbound sockets blocked; a cloud provider without consent fails before any call. |
+| `tests/test_redact.py`, `tests/test_llm.py` | The cloud view is redacted, revision hints never quote stripped evidence, and keys are scrubbed from errors. |
+| `tests/test_license_boundary.py` | No AGPL code is on the core import graph, checked statically and in a fresh interpreter. |
+| `tests/test_verify.py`, `tests/test_evaluation.py` | The verifier rejects every fabrication class and accepts every grounded one, and the benchmark catches a deliberately weakened verifier. |
+| detect-secrets, bandit, pip-audit | No committed secrets, no unsuppressed static-analysis finding, no known advisory against a pinned dependency. |
 
 ## Reporting a vulnerability
 
-Please report suspected vulnerabilities privately rather than opening a public
-issue:
+Report privately, not in a public issue: use GitHub's "Report a vulnerability" flow
+under the repository's Security tab. Include the affected version or commit,
+reproduction steps, and the impact you observed. You should get an acknowledgement
+within a few business days. Please allow reasonable time for a fix before public
+disclosure.
 
-- Preferred: open a private report through GitHub's "Report a vulnerability" flow
-  under the repository's Security tab.
-- Include a clear description, the affected version or commit, reproduction steps,
-  and the impact you observed.
+Especially welcome: any way to get an unverified statement into a report, to make
+a default path reach the network, to make the web viewer execute or fetch something,
+or to inject markup through evidence content.
 
-We aim to acknowledge a report within a few business days and to keep you updated as
-we investigate and prepare a fix. Please give us reasonable time to remediate before
-any public disclosure.
-
-Out of scope for reports: findings that require running Casebound outside its
-defensive scope (for example, wiring it to perform remote collection or to execute
-collected binaries) are not Casebound vulnerabilities, since the tool is designed
-and tested not to do those things.
+Out of scope: behavior that requires modifying Casebound to act outside its
+defensive scope (for example, wiring it to collect remotely or to run collected
+binaries), and exposure caused by binding the web viewer beyond loopback, which the
+CLI warns about.

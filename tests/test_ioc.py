@@ -236,3 +236,39 @@ def test_document_file_names_are_not_promoted_to_domains() -> None:
     assert find_indicators("exfil staged in report.docx and notes.pdf") == []
     assert find_indicators("manifest.json next to backup.yaml") == []
     assert ("domain", "evil.zip") in find_indicators("fetched evil.zip from the c2")
+
+
+# 4. Quoted paths, loopback addresses, and case-insensitive paths.
+
+
+def test_a_quoted_path_is_taken_whole() -> None:
+    # A service ImagePath quotes a path with spaces and parentheses, then passes
+    # arguments after it; the quotes delimit exactly one path.
+    value = '"C:\\Program Files (x86)\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe" /svc'
+    assert _candidates_from_value(value) == [
+        (IOC_TYPE_PATH, "C:\\Program Files (x86)\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe")
+    ]
+
+
+def test_quoted_unc_path_and_trailing_indicators_are_all_found() -> None:
+    found = _candidates_from_value('"\\\\WIN-FILE-02\\ADMIN$\\tmp\\a b.exe" 203.0.113.9')
+    assert (IOC_TYPE_PATH, "\\\\WIN-FILE-02\\ADMIN$\\tmp\\a b.exe") in found
+    assert (IOC_TYPE_IP, "203.0.113.9") in found
+
+
+def test_loopback_and_unspecified_addresses_are_not_indicators() -> None:
+    assert find_indicators("127.0.0.1") == []
+    assert find_indicators("listening on 0.0.0.0:445 and 127.10.0.3") == []
+    assert find_indicators("10.4.12.66") == [(IOC_TYPE_IP, "10.4.12.66")]
+
+
+def test_paths_differing_only_in_case_or_a_trailing_slash_are_one_indicator() -> None:
+    events = [
+        _event(obj="C:\\Windows\\System32\\", record="1"),
+        _event(obj="c:\\windows\\system32", record="2", message="second spelling"),
+    ]
+    extraction = extract_iocs(events)
+    [path] = extraction.iocs.by_type(IOC_TYPE_PATH)
+    assert path.event_count == 2
+    # The displayed spelling does not depend on input order.
+    assert extract_iocs(list(reversed(events))).iocs.by_type(IOC_TYPE_PATH)[0].value == path.value

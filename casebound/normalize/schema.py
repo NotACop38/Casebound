@@ -1,4 +1,4 @@
-"""Canonical event schema v0.1 (PRD Section 10): the keystone record.
+"""Canonical event schema 0.2 (PRD Section 10): the keystone record.
 
 Everything downstream hangs off this record. Ingest adapters emit raw rows, the
 mappers in this package turn them into ``Event`` instances, and enrichment, the
@@ -10,8 +10,9 @@ this is what lets the verifier treat an id as an unforgeable handle to a real,
 extracted event. The same logical event always hashes to the same id, and two
 events that differ in any core field get different ids.
 
-``schema/event.schema.json`` is the validation source of truth and mirrors this
-module exactly. ``docs/schema.md`` documents the record with two worked examples.
+The JSON Schema shipped as package data (``casebound/data/event.schema.json``)
+is the validation source of truth and mirrors this module exactly.
+``docs/schema.md`` documents the record with worked examples from real output.
 
 Conventions: timestamps are ISO 8601 normalized to UTC with a trailing ``Z``.
 No em dashes or en dashes anywhere (PRD Section 15).
@@ -26,20 +27,26 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime as _datetime
 from functools import lru_cache
-from pathlib import Path
+from importlib.resources import files
 from typing import Any
 
 import jsonschema
 
-SCHEMA_VERSION = "0.1"
+# The version of the canonical record. 0.2 added the optional ``source_id`` on an
+# ATT&CK mapping (the id a source wrote before it was translated to its current
+# successor); every 0.1 document is still a valid 0.2 document.
+SCHEMA_VERSION = "0.2"
 
 # Domain-separation prefix folded into the hashed content so that event ids
-# cannot silently collide across future schema versions.
-_EVENT_ID_NAMESPACE = f"casebound-event-v{SCHEMA_VERSION}"
+# cannot silently collide across identity definitions. It names the identity
+# definition, not the schema version: the core fields and their encoding have
+# not changed since 0.1, so ids stay stable across the 0.2 schema. Change this
+# only when ``CORE_ID_FIELDS`` or their canonical encoding changes.
+_EVENT_ID_NAMESPACE = "casebound-event-v0.1"
 
-# The JSON Schema that mirrors this module. Resolved relative to the repo root so
-# the path holds whether the package is installed editable or from a wheel.
-SCHEMA_PATH = Path(__file__).resolve().parents[2] / "schema" / "event.schema.json"
+# The JSON Schema that mirrors this module, shipped inside the package so it is
+# available from an editable install, a wheel, or an sdist alike.
+SCHEMA_RESOURCE = "data/event.schema.json"
 
 # Controlled vocabulary: how the timestamp relates to the event (Timesketch's
 # timestamp_desc). Open-ended cases fall back to "other".
@@ -59,21 +66,25 @@ SOURCE_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-# Recommended normalized action verbs. The vocabulary is intentionally open:
-# mappers should prefer a verb from this set, but any snake_case verb validates,
-# so a new source can describe activity this list does not yet cover.
+# Recommended normalized action verbs: every verb a bundled mapper emits. The
+# vocabulary is intentionally open: mappers should prefer a verb from this set,
+# but any snake_case verb validates, so a new source can describe activity this
+# list does not yet cover (the report phrases an unlisted verb generically).
 KNOWN_ACTIONS: frozenset[str] = frozenset(
     {
         "process_create",
         "process_terminate",
         "process_access",
+        "remote_thread_create",
         "logon",
+        "logon_failure",
         "logoff",
         "file_create",
         "file_write",
         "file_read",
         "file_delete",
         "file_rename",
+        "file_metadata_change",
         "registry_set",
         "registry_delete",
         "service_install",
@@ -86,6 +97,7 @@ KNOWN_ACTIONS: frozenset[str] = frozenset(
         "account_modify",
         "privilege_use",
         "dns_query",
+        "log_clear",
         "other",
     }
 )
@@ -114,13 +126,14 @@ CORE_ID_FIELDS: tuple[str, ...] = (
 __all__ = [
     "CORE_ID_FIELDS",
     "KNOWN_ACTIONS",
-    "SCHEMA_PATH",
+    "SCHEMA_RESOURCE",
     "SCHEMA_VERSION",
     "SOURCE_TOOLS",
     "TIMESTAMP_DESCS",
     "AttackTechnique",
     "Event",
     "RawRef",
+    "SchemaError",
     "compute_event_id",
     "load_schema",
     "validate_event_dict",
@@ -141,15 +154,18 @@ def _require_non_empty(name: str, value: str) -> str:
 class AttackTechnique:
     """A single ATT&CK mapping attached to an event.
 
-    ``technique_id`` is an ATT&CK technique or sub-technique id (for example
+    ``technique_id`` is a current ATT&CK technique or sub-technique id (for example
     "T1059" or "T1059.001"). ``mapping_source`` records how the mapping was made
     (for example "rule_tag" for a passthrough from a detection rule, or
     "mapping_table" for the documented deterministic table), so every tag is
-    auditable (FR14).
+    auditable (FR14). ``source_id`` is set only when the source wrote a different
+    id that ATT&CK has since revoked: it keeps what the evidence said, while
+    ``technique_id`` carries the current successor.
     """
 
     technique_id: str
     mapping_source: str
+    source_id: str | None = None
 
     def __post_init__(self) -> None:
         if not _TECHNIQUE_RE.match(self.technique_id):
@@ -157,15 +173,24 @@ class AttackTechnique:
                 f"technique_id must look like T1059 or T1059.001, got {self.technique_id!r}"
             )
         _require_non_empty("mapping_source", self.mapping_source)
+        if self.source_id is not None and not _TECHNIQUE_RE.match(self.source_id):
+            raise SchemaError(
+                f"source_id must look like T1059 or T1059.001, got {self.source_id!r}"
+            )
 
     def to_dict(self) -> dict[str, str]:
-        return {"technique_id": self.technique_id, "mapping_source": self.mapping_source}
+        rendered = {"technique_id": self.technique_id, "mapping_source": self.mapping_source}
+        if self.source_id is not None:
+            rendered["source_id"] = self.source_id
+        return rendered
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> AttackTechnique:
+        source_id = data.get("source_id")
         return cls(
             technique_id=str(data["technique_id"]),
             mapping_source=str(data["mapping_source"]),
+            source_id=str(source_id) if source_id is not None else None,
         )
 
 
@@ -419,12 +444,19 @@ class Event:
 @lru_cache(maxsize=1)
 def load_schema() -> dict[str, Any]:
     """Load and cache the JSON Schema that mirrors this module."""
-    schema: dict[str, Any] = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    text = files("casebound").joinpath(SCHEMA_RESOURCE).read_text(encoding="utf-8")
+    schema: dict[str, Any] = json.loads(text)
     return schema
 
 
+@lru_cache(maxsize=1)
+def _validator() -> jsonschema.Draft202012Validator:
+    """The compiled validator, built once: validation runs per event on load."""
+    return jsonschema.Draft202012Validator(load_schema())
+
+
 def validate_event_dict(data: Mapping[str, Any]) -> None:
-    """Validate a dict against schema/event.schema.json.
+    """Validate a dict against the canonical event JSON Schema.
 
     Runs the structural JSON Schema gate, then a semantic check that ``datetime``
     is a real UTC instant (the schema regex matches the shape but cannot reject
@@ -433,7 +465,7 @@ def validate_event_dict(data: Mapping[str, Any]) -> None:
     ``jsonschema.ValidationError`` on the first problem. This is the gate that
     ingest output and report input both pass through.
     """
-    jsonschema.Draft202012Validator(load_schema()).validate(dict(data))
+    _validator().validate(dict(data))
     try:
         _parse_strict_utc(data["datetime"])
     except (ValueError, KeyError, TypeError) as exc:

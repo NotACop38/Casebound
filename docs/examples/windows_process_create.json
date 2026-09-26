@@ -1,0 +1,64 @@
+{
+  "event_id": "6fb28f7a4aa4868c10e5077dbc43226eb111bc824d953c347b6348a6c58e3c70",
+  "datetime": "2026-03-14T08:42:17Z",
+  "timestamp_raw": "2026-03-14 04:42:17.000 -04:00",
+  "source_timezone": "UTC-04:00",
+  "timestamp_desc": "logged",
+  "message": "Office Application Spawned PowerShell (Possible Phishing Macro)",
+  "host": "WIN-ACCT-07",
+  "principal": "CORP\\jdoe",
+  "action": "process_create",
+  "object": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+  "source_tool": "hayabusa",
+  "source_artifact": "Security.evtx",
+  "details": {
+    "win_event_id": 4688,
+    "channel": "Security",
+    "fields": {
+      "CommandLine": "powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQA",
+      "NewProcessName": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "NewProcessId": "0x1a2c",
+      "SubjectUserName": "jdoe",
+      "SubjectLogonId": "0x3e7a91",
+      "ParentProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+      "ProcessId": "0x105c",
+      "SubjectDomainName": "CORP",
+      "SubjectUserSid": "S-1-5-21-1111111111-2222222222-3333333333-1104",
+      "TokenElevationType": "%%1938"
+    },
+    "level": "high",
+    "rule_title": "Office Application Spawned PowerShell (Possible Phishing Macro)",
+    "rule_file": "Sec_4688_High_OfficeApplicationSpawnedPowerShellPossiblePhishingMacro.yml",
+    "rule_id": "e58eda5d-d8ff-530b-83ad-47b1c036d233",
+    "mitre_tactics": [
+      "InitAccess",
+      "Exec"
+    ],
+    "rule_mitre_tags": [
+      "T1566.001",
+      "T1059.001"
+    ]
+  },
+  "attack_techniques": [
+    {
+      "technique_id": "T1566.001",
+      "mapping_source": "rule_tag"
+    },
+    {
+      "technique_id": "T1059.001",
+      "mapping_source": "rule_tag"
+    }
+  ],
+  "ioc_refs": [
+    "ioc-4c86505da896",
+    "ioc-503b5fcafd6e"
+  ],
+  "confidence": 1.0,
+  "raw_ref": {
+    "source_file": "synthetic_hayabusa.csv",
+    "record": "81104"
+  },
+  "tags": [
+    "episode:EP-df801a77c149"
+  ]
+}

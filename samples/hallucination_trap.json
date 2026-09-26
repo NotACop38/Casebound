@@ -62,7 +62,7 @@
       "expected_reason": "action_mismatch",
       "claim": {
         "text": "CORP\\jdoe created a new process at the start of the session.",
-        "citations": ["785a7c086b1fa04003a3995d5d5cf429247e9dea18847fc09b6f77b1fcb98bd3"],
+        "citations": ["c856edb78c6288b0c64107d361ecf16f47e0a21da06b5c6c0b234f3f5b5a05d8"],
         "asserts": {
           "datetime": "2026-03-14T08:30:05Z",
           "principal": "CORP\\jdoe",
@@ -96,6 +96,28 @@
           "datetime": "2026-03-14T08:42:17Z",
           "action": "process_create"
         }
+      }
+    },
+    {
+      "name": "no_citations",
+      "description": "A confident claim that cites nothing at all, so no event can support it.",
+      "expected_reason": "no_citations",
+      "claim": {
+        "text": "The attacker dumped every domain password hash with DCSync.",
+        "citations": [],
+        "asserts": {
+          "action": "process_access"
+        }
+      }
+    },
+    {
+      "name": "no_assertions",
+      "description": "Cites the real process-create event but asserts no checkable fact, so the verifier has nothing to confirm and the prose would be unverified.",
+      "expected_reason": "no_assertions",
+      "claim": {
+        "text": "This was the moment the attacker took full control of the domain.",
+        "citations": ["6fb28f7a4aa4868c10e5077dbc43226eb111bc824d953c347b6348a6c58e3c70"],
+        "asserts": {}
       }
     }
   ]

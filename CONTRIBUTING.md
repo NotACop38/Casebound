@@ -1,7 +1,8 @@
 # Contributing to Casebound
 
-Thanks for considering a contribution. Casebound is a local-first DFIR
-investigation copilot, and it has one reason to exist: the verification guarantee.
+Thanks for considering a contribution. Casebound turns already-collected DFIR
+evidence into a timeline and a report whose narrative is verified against that
+evidence, and it has one reason to exist: the verification guarantee.
 This guide explains the line we never cross, the standard every change meets, and
 the fastest path to a merged pull request. The most common contribution, a new
 ingestion source, has its own afternoon-length walkthrough in
@@ -41,25 +42,25 @@ Section 6, [`SECURITY.md`](SECURITY.md)):
   never raw evidence files, and it never decides what is true.
 
 These are enforced in code, not just prose. `tests/test_defensive_scope.py`,
-`tests/test_no_egress.py`, and `tests/test_redact.py` run on every `make ci` and
-again as a named step in `make security`. A pull request that trips them does not
-merge.
+`tests/test_no_egress.py`, `tests/test_license_boundary.py`, and
+`tests/test_redact.py` run on every `make ci`, and the invariant tests run again as
+a named step in `make security`. A pull request that trips them does not merge.
 
 ## Project setup
 
-Casebound targets Python 3.11 or newer.
+Casebound supports Python 3.11, 3.12, and 3.13; CI runs the gate on all three.
 
 ```bash
 git clone https://github.com/NotACop38/Casebound.git
-cd casebound
+cd Casebound
 python -m venv .venv && source .venv/bin/activate
 make install          # editable install plus the pinned dev toolchain
-make ci               # the full gate: lint, types, tests, schema, secrets, bandit, deps
+make ci               # the full gate
 ```
 
 `make demo` runs the whole pipeline offline on the bundled synthetic scenario and
-writes the report, the Navigator layer, and the metrics to `out/`. Use it to see
-your change end to end.
+writes the reports, the Navigator layer, and `metrics.json` to `out/`. Use it to
+see your change end to end.
 
 ## The build surface
 
@@ -67,12 +68,14 @@ These targets are the contract. Keep them working as the project grows.
 
 | Command | What it does |
 | --- | --- |
-| `make install` | Install the package and the pinned dev dependencies. |
-| `make lint` | ruff check, ruff format check, and mypy. Zero errors. |
+| `make install` | Install the package and the pinned dev toolchain. |
+| `make lint` | ruff check, ruff format check, and mypy (strict). Zero errors. |
 | `make test` | pytest. All green, no network, no API keys. |
-| `make demo` | Run the full pipeline offline, producing `out/report.html` and the metrics. |
-| `make ci` | The gate: lint, test, schema validation, secret scan, bandit, dependency audit. |
-| `make security` | The gate plus the defensive-scope invariant tests. |
+| `make demo` | Run the full pipeline offline on the bundled scenario and score it, writing to `out/`. |
+| `make serve` | Open the optional web viewer on loopback. |
+| `make ci` | The gate: lint, types, tests with a 93% coverage floor, schema validation, the no-dash style check, the secret scan, bandit, and the dependency audit. |
+| `make security` | The gate, then the defensive-scope invariant tests as a named step. |
+| `make catalog` | Rebuild the bundled ATT&CK catalog from a MITRE STIX bundle you downloaded (`ATTACK_STIX=path`). |
 
 ## Definition of done for a pull request
 
@@ -108,6 +111,8 @@ take an afternoon. The pattern is always the same:
 4. A **golden test** (`tests/test_<source>.py`) that pins the fixture to the
    golden output and proves malformed rows are reported, de-duplication keeps
    provenance, and any ATT&CK rule tags pass through.
+5. A **registry entry** in `casebound/sources.py`, which makes the source available
+   to `casebound report` and `casebound sources`.
 
 The full step-by-step walkthrough, with working code, is in
 [`docs/authoring.md`](docs/authoring.md). If your source is just a delimited CSV,

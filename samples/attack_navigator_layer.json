@@ -1,12 +1,13 @@
 {
   "name": "Casebound: office_intrusion",
   "versions": {
-    "navigator": "5.1.0",
+    "attack": "19",
+    "navigator": "5.3.2",
     "layer": "4.5"
   },
   "domain": "enterprise-attack",
-  "description": "Techniques observed by Casebound in the office_intrusion scenario, scored by the number of events that exhibit each. Generated deterministically and offline from the verified timeline.",
-  "sorting": 0,
+  "description": "Techniques observed by Casebound in office_intrusion, scored by the number of events that exhibit each. Generated deterministically and offline from the normalized timeline against ATT&CK 19.2.",
+  "sorting": 3,
   "hideDisabled": false,
   "techniques": [
     {
@@ -79,6 +80,18 @@
       "techniqueID": "T1566.001",
       "score": 1,
       "comment": "Phishing: Spearphishing Attachment",
+      "enabled": true
+    },
+    {
+      "techniqueID": "T1569.002",
+      "score": 1,
+      "comment": "System Services: Service Execution",
+      "enabled": true
+    },
+    {
+      "techniqueID": "T1685.005",
+      "score": 1,
+      "comment": "Disable or Modify Tools: Clear Windows Event Logs",
       "enabled": true
     }
   ],

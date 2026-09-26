@@ -1,0 +1,50 @@
+{
+  "event_id": "258f47db2d3059e385848df5a7fa53f3ca7e6cdaadd68ffa5d6b9f732e004798",
+  "datetime": "2026-03-14T09:10:17Z",
+  "timestamp_raw": "2026-03-14 05:10:17.000 -04:00",
+  "source_timezone": "UTC-04:00",
+  "timestamp_desc": "logged",
+  "message": "Security Log Cleared",
+  "host": "WIN-FILE-02",
+  "principal": "CORP\\svc-backup",
+  "action": "log_clear",
+  "object": "Security",
+  "source_tool": "hayabusa",
+  "source_artifact": "Security.evtx",
+  "details": {
+    "win_event_id": 1102,
+    "channel": "Security",
+    "fields": {
+      "SubjectUserName": "svc-backup",
+      "SubjectDomainName": "CORP",
+      "SubjectLogonId": "0x8f2a31",
+      "SubjectUserSid": "S-1-5-21-1111111111-2222222222-3333333333-1188"
+    },
+    "level": "high",
+    "rule_title": "Security Log Cleared",
+    "rule_file": "Sec_1102_High_SecurityLogCleared.yml",
+    "rule_id": "5906f87c-47e5-5e06-a3b0-d74630ba507a",
+    "mitre_tactics": [
+      "DefImpair"
+    ],
+    "rule_mitre_tags": [
+      "T1070.001"
+    ]
+  },
+  "attack_techniques": [
+    {
+      "technique_id": "T1685.005",
+      "mapping_source": "rule_tag",
+      "source_id": "T1070.001"
+    }
+  ],
+  "ioc_refs": [],
+  "confidence": 1.0,
+  "raw_ref": {
+    "source_file": "synthetic_hayabusa.csv",
+    "record": "81988"
+  },
+  "tags": [
+    "episode:EP-95595e4bef78"
+  ]
+}

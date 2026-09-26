@@ -1,11 +1,12 @@
 {
   "scenario": "office_intrusion",
-  "description": "A multi-stage host intrusion: a phishing macro spawns PowerShell, which pulls a stager, persists via a Run key and a scheduled task, reads LSASS, moves laterally to a file server via a network logon and a remote service, then archives and exfiltrates collected data to an external host.",
-  "version": "0.1",
+  "description": "A multi-stage intrusion on a workstation and a file server: a phishing macro spawns PowerShell, which pulls a stager, persists through a Run key and a scheduled task, and reads LSASS; a stolen service account then reaches the file server over SMB, installs and runs a service, archives and exfiltrates the Finance share, and clears the Security log. Benign activity surrounds it.",
+  "version": "0.2",
   "seed": 1337,
   "source_csv": "synthetic_hayabusa.csv",
   "source_tool": "hayabusa",
   "output_timezone": "America/New_York",
+  "attack_version": "19.2",
   "hosts": [
     "WIN-ACCT-07",
     "WIN-FILE-02"
@@ -18,6 +19,7 @@
     "collection",
     "command_and_control",
     "credential_access",
+    "defense_impairment",
     "exfiltration",
     "initial_access",
     "lateral_movement",
@@ -35,7 +37,9 @@
     "T1543.003",
     "T1547.001",
     "T1560.001",
-    "T1566.001"
+    "T1566.001",
+    "T1569.002",
+    "T1685.005"
   ],
   "iocs": {
     "ips": [
@@ -54,14 +58,18 @@
       "41686f19468fec28c13d66d2dcc6b15173dd30dd45b7b488baa3119cdcdf7ec3"
     ]
   },
-  "event_count": 10,
+  "total_events": 37,
+  "benign_events": 25,
+  "event_count": 12,
   "events": [
     {
       "label_id": "ia-office-spawn-powershell",
       "stage": "initial_access",
-      "record_id": "80038",
+      "record_id": "81104",
       "timestamp_utc": "2026-03-14T08:42:17Z",
       "computer": "WIN-ACCT-07",
+      "channel": "Security",
+      "win_event_id": 4688,
       "principal": "CORP\\jdoe",
       "action": "process_create",
       "object": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
@@ -69,9 +77,9 @@
         "T1566.001",
         "T1059.001"
       ],
-      "mitre_tactics": [
-        "Initial Access",
-        "Execution"
+      "rule_tags": [
+        "T1566.001",
+        "T1059.001"
       ],
       "rule_title": "Office Application Spawned PowerShell (Possible Phishing Macro)",
       "message": "winword.exe spawned powershell.exe with an encoded command"
@@ -79,18 +87,21 @@
     {
       "label_id": "c2-stager-download",
       "stage": "command_and_control",
-      "record_id": "80114",
+      "record_id": "81115",
       "timestamp_utc": "2026-03-14T08:43:05Z",
       "computer": "WIN-ACCT-07",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "win_event_id": 3,
       "principal": "CORP\\jdoe",
       "action": "network_connect",
-      "object": "sync-update.example:443",
+      "object": "203.0.113.77:443",
       "technique_ids": [
         "T1071.001",
         "T1105"
       ],
-      "mitre_tactics": [
-        "Command and Control"
+      "rule_tags": [
+        "T1071.001",
+        "T1105"
       ],
       "rule_title": "PowerShell Network Connection to Rare External Host",
       "message": "powershell.exe connected to sync-update.example to retrieve a stager"
@@ -98,18 +109,19 @@
     {
       "label_id": "persist-run-key",
       "stage": "persistence",
-      "record_id": "80191",
+      "record_id": "81182",
       "timestamp_utc": "2026-03-14T08:44:30Z",
       "computer": "WIN-ACCT-07",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "win_event_id": 13,
       "principal": "CORP\\jdoe",
       "action": "registry_set",
-      "object": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Updater",
+      "object": "HKU\\S-1-5-21-1111111111-2222222222-3333333333-1104\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\Updater",
       "technique_ids": [
         "T1547.001"
       ],
-      "mitre_tactics": [
-        "Persistence",
-        "Privilege Escalation"
+      "rule_tags": [
+        "T1547.001"
       ],
       "rule_title": "Autorun Registry Run Key Set to User AppData Executable",
       "message": "Run key Updater set to launch the implant at logon"
@@ -117,19 +129,19 @@
     {
       "label_id": "persist-scheduled-task",
       "stage": "persistence",
-      "record_id": "80287",
+      "record_id": "81274",
       "timestamp_utc": "2026-03-14T08:45:10Z",
       "computer": "WIN-ACCT-07",
+      "channel": "Security",
+      "win_event_id": 4698,
       "principal": "CORP\\jdoe",
       "action": "scheduled_task_create",
       "object": "\\MicrosoftUpdaterTask",
       "technique_ids": [
         "T1053.005"
       ],
-      "mitre_tactics": [
-        "Persistence",
-        "Privilege Escalation",
-        "Execution"
+      "rule_tags": [
+        "T1053.005"
       ],
       "rule_title": "Scheduled Task Created Pointing at User AppData Executable",
       "message": "Scheduled task MicrosoftUpdaterTask created to run the implant"
@@ -137,17 +149,19 @@
     {
       "label_id": "cred-lsass-access",
       "stage": "credential_access",
-      "record_id": "80311",
+      "record_id": "81362",
       "timestamp_utc": "2026-03-14T08:48:22Z",
       "computer": "WIN-ACCT-07",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "win_event_id": 10,
       "principal": "CORP\\jdoe",
       "action": "process_access",
       "object": "C:\\Windows\\System32\\lsass.exe",
       "technique_ids": [
         "T1003.001"
       ],
-      "mitre_tactics": [
-        "Credential Access"
+      "rule_tags": [
+        "T1003.001"
       ],
       "rule_title": "LSASS Memory Access from Unsigned Process",
       "message": "updater.exe opened lsass.exe with memory-read access"
@@ -155,93 +169,142 @@
     {
       "label_id": "lateral-network-logon",
       "stage": "lateral_movement",
-      "record_id": "80356",
+      "record_id": "81463",
       "timestamp_utc": "2026-03-14T08:55:03Z",
       "computer": "WIN-FILE-02",
+      "channel": "Security",
+      "win_event_id": 4624,
       "principal": "CORP\\svc-backup",
       "action": "logon",
       "object": "10.4.12.66",
       "technique_ids": [
         "T1078.002"
       ],
-      "mitre_tactics": [
-        "Lateral Movement"
+      "rule_tags": [
+        "T1078.002"
       ],
       "rule_title": "Network Logon with Stolen Service Account Credentials",
-      "message": "Network logon for CORP\\svc-backup on WIN-FILE-02 from 10.4.12.66"
+      "message": "Logon type 3 for CORP\\svc-backup on WIN-FILE-02"
     },
     {
       "label_id": "lateral-admin-share",
       "stage": "lateral_movement",
-      "record_id": "80408",
+      "record_id": "81517",
       "timestamp_utc": "2026-03-14T08:55:23Z",
       "computer": "WIN-FILE-02",
+      "channel": "Security",
+      "win_event_id": 5140,
       "principal": "CORP\\svc-backup",
       "action": "network_share_access",
-      "object": "\\\\WIN-FILE-02\\ADMIN$",
+      "object": "\\\\*\\ADMIN$",
       "technique_ids": [
         "T1021.002"
       ],
-      "mitre_tactics": [
-        "Lateral Movement"
+      "rule_tags": [
+        "T1021.002"
       ],
       "rule_title": "Administrative Share Access from Remote Host",
-      "message": "ADMIN$ share on WIN-FILE-02 accessed by CORP\\svc-backup from 10.4.12.66"
+      "message": "ADMIN$ share on WIN-FILE-02 accessed from 10.4.12.66"
     },
     {
       "label_id": "lateral-remote-service",
       "stage": "lateral_movement",
-      "record_id": "80492",
+      "record_id": "81614",
       "timestamp_utc": "2026-03-14T08:56:40Z",
       "computer": "WIN-FILE-02",
-      "principal": "CORP\\svc-backup",
+      "channel": "System",
+      "win_event_id": 7045,
+      "principal": null,
       "action": "service_install",
       "object": "WinHelpSvc",
       "technique_ids": [
         "T1543.003"
       ],
-      "mitre_tactics": [
-        "Persistence",
-        "Privilege Escalation"
+      "rule_tags": [
+        "T1543.003"
       ],
       "rule_title": "Service Installed from World-Writable Temp Path",
       "message": "Service WinHelpSvc installed on WIN-FILE-02 from a Temp path"
     },
     {
+      "label_id": "lateral-service-exec",
+      "stage": "lateral_movement",
+      "record_id": "81656",
+      "timestamp_utc": "2026-03-14T08:56:43Z",
+      "computer": "WIN-FILE-02",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "win_event_id": 1,
+      "principal": "NT AUTHORITY\\SYSTEM",
+      "action": "process_create",
+      "object": "C:\\Windows\\Temp\\winhelpsvc.exe",
+      "technique_ids": [
+        "T1569.002"
+      ],
+      "rule_tags": [
+        "T1569.002"
+      ],
+      "rule_title": "Service Binary Executed from Temp Directory",
+      "message": "winhelpsvc.exe started by the Service Control Manager"
+    },
+    {
       "label_id": "collect-archive",
       "stage": "collection",
-      "record_id": "80583",
+      "record_id": "81796",
       "timestamp_utc": "2026-03-14T09:02:15Z",
       "computer": "WIN-FILE-02",
+      "channel": "Security",
+      "win_event_id": 4688,
       "principal": "CORP\\svc-backup",
       "action": "process_create",
-      "object": "C:\\Windows\\Temp\\backup.7z",
+      "object": "C:\\Program Files\\7-Zip\\7z.exe",
       "technique_ids": [
         "T1560.001"
       ],
-      "mitre_tactics": [
-        "Collection"
+      "rule_tags": [
+        "T1560.001"
       ],
       "rule_title": "Archive Utility Compressing Share Contents to Temp",
-      "message": "7z.exe archived collected files into C:\\Windows\\Temp\\backup.7z"
+      "message": "7z.exe archived the Finance share into C:\\Windows\\Temp\\backup.7z"
     },
     {
       "label_id": "exfil-outbound",
       "stage": "exfiltration",
-      "record_id": "80636",
+      "record_id": "81954",
       "timestamp_utc": "2026-03-14T09:08:47Z",
       "computer": "WIN-FILE-02",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "win_event_id": 3,
       "principal": "CORP\\svc-backup",
       "action": "network_connect",
       "object": "203.0.113.77:443",
       "technique_ids": [
         "T1041"
       ],
-      "mitre_tactics": [
-        "Exfiltration"
+      "rule_tags": [
+        "T1041"
       ],
       "rule_title": "Large Outbound Transfer to Rare External Host",
-      "message": "Outbound connection from WIN-FILE-02 to 203.0.113.77 carrying the archive"
+      "message": "curl.exe on WIN-FILE-02 sent the archive to 203.0.113.77"
+    },
+    {
+      "label_id": "impair-log-clear",
+      "stage": "defense_impairment",
+      "record_id": "81988",
+      "timestamp_utc": "2026-03-14T09:10:17Z",
+      "computer": "WIN-FILE-02",
+      "channel": "Security",
+      "win_event_id": 1102,
+      "principal": "CORP\\svc-backup",
+      "action": "log_clear",
+      "object": "Security",
+      "technique_ids": [
+        "T1685.005"
+      ],
+      "rule_tags": [
+        "T1070.001"
+      ],
+      "rule_title": "Security Log Cleared",
+      "message": "The Security log on WIN-FILE-02 was cleared"
     }
   ]
 }

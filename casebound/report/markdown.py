@@ -1,16 +1,16 @@
 """The Markdown report renderer (PRD FR30).
 
-Emits the same content as the HTML report (the hero deliverable) as Markdown
-suitable for pasting into a ticket or a chat. Both renderers draw from the shared
-``ReportModel`` (see ``casebound.report.model``), so the Markdown and the HTML can
-never drift apart: the summary, the verified narrative with its citations, the
-rejected-claims audit, the deterministic timeline, the activity episodes, the
-indicator set, and the evidence appendix are all present.
+Emits the same content as the HTML report as Markdown suitable for pasting into a
+ticket or a chat. Both renderers draw from the shared ``ReportModel``, so the
+narrative, the audit, the ATT&CK matrix, the episodes, the indicators, the timeline,
+and the evidence appendix can never drift between formats.
 
-An accepted claim is rendered from the fields the verifier checked, never from the
-model's free prose, so a fact the verifier did not confirm can never reach a reader
-as a statement (AGENTS.md prime directive). When no model is configured the
-narrative section says so and the deterministic report stands on its own (FR26).
+Evidence fields are attacker-controlled by definition, and a ticket renderer may
+honor raw HTML and links, so every evidence-derived string is neutralized: whitespace
+collapses (a value cannot break out of its bullet or table row), Markdown-significant
+punctuation is backslash-escaped (no links, images, code-span breakouts, raw HTML, or
+table breaks), and a bare http(s) URL is defanged to hxxp(s) so autolinking cannot
+make it clickable.
 
 The output is deterministic and ends with a single trailing newline.
 
@@ -24,23 +24,17 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from casebound.enrich.cluster import Episode
-from casebound.enrich.ioc import IocSet
-from casebound.normalize.schema import Event, RawRef
-from casebound.report.model import ReportModel, build_report_model
-from casebound.verify.engine import VerificationResult
+from casebound.pipeline import Case
+from casebound.report.model import NarrativeEntry, ReportModel, build_report_model
 
-__all__ = ["render_markdown_report", "write_markdown_report"]
+__all__ = ["DEFAULT_MARKDOWN_MAX_EVENTS", "render_markdown", "write_markdown"]
 
-# How many leading hex characters of an event id to show as its short handle in
-# prose. The full id is always carried in the appendix heading and the JSON report.
+# The most events the Markdown timeline and appendix render before switching to the
+# notable events only. A ticket is a worse place than a browser for a long document.
+DEFAULT_MARKDOWN_MAX_EVENTS = 500
+
 _SHORT_ID_LEN = 12
-
-
-def _short(event_id: str) -> str:
-    """The short, human-readable handle for an event id."""
-    return event_id[:_SHORT_ID_LEN]
-
+_PROBLEM_LIST_LIMIT = 50
 
 # The structurally dangerous Markdown punctuation neutralized in evidence-derived
 # prose: a backslash escape kills links and images ([]()), code spans (backtick),
@@ -51,31 +45,27 @@ def _short(event_id: str) -> str:
 _MD_SPECIAL_RE = re.compile(r"[\\`\[\]<>()|]")
 
 # GFM autolinks a bare http(s) URL even with every bracket escaped, so a URL in
-# evidence prose is defanged to the DFIR-conventional hxxp(s) instead: nothing
-# evidence-derived may render as a clickable link.
+# evidence prose is defanged to the DFIR-conventional hxxp(s) instead.
 _URL_SCHEME_RE = re.compile(r"(?i)\bhttp(s?)://")
 
 
-def _collapse(value: Any) -> str:
-    """Stringify and collapse all whitespace runs (newlines included) to a space.
+def _short(event_id: str) -> str:
+    return event_id[:_SHORT_ID_LEN]
 
-    Evidence can carry embedded newlines; collapsed, a value can never break out
-    of its bullet or table row into new document structure.
-    """
+
+def _time(value: str | None) -> str:
+    if not value:
+        return ""
+    return value.replace("T", " ").removesuffix("Z") + " UTC"
+
+
+def _collapse(value: Any) -> str:
+    """Stringify and collapse all whitespace runs (newlines included) to a space."""
     return " ".join(str(value).split())
 
 
 def _cell(value: Any) -> str:
-    """Render evidence text inert, for prose and table cells alike.
-
-    Evidence fields are attacker-controlled by definition, and this report is
-    pasted into ticket renderers that may honor raw HTML and links. Whitespace
-    collapses so a value cannot break the structure, the Markdown-significant
-    punctuation is backslash-escaped so a value cannot open a link, a code span,
-    raw HTML, emphasis, or a heading, and a bare http(s) URL is defanged to
-    hxxp(s) so GFM autolinking cannot make it clickable. None renders as an
-    empty string, matching how the HTML table leaves an absent field blank.
-    """
+    """Render evidence text inert, for prose and table cells alike (None is blank)."""
     if value is None:
         return ""
     escaped = _MD_SPECIAL_RE.sub(lambda match: "\\" + match.group(0), _collapse(value))
@@ -86,37 +76,23 @@ def _code_span(text: str) -> str:
     """Wrap already-collapsed text in a code span it cannot break out of.
 
     A backslash does not escape inside a code span, so backticks are replaced
-    outright; pipes are escaped because GFM splits table rows before code spans
-    are parsed.
+    outright; pipes are escaped because GFM splits table rows before code spans are
+    parsed.
     """
     return "`" + text.replace("`", "'").replace("|", "\\|") + "`"
 
 
 def _mono(value: Any) -> str:
-    """Render a value as inline code for a table cell, or blank when absent."""
+    """Render a value as inline code, or blank when absent."""
     if value is None or value == "":
         return ""
     return _code_span(_collapse(value))
 
 
-def _inline(value: Any) -> str:
-    """Render a scalar detail value as a safe inline code span."""
-    text = "" if value is None else _collapse(value)
-    if text == "":
-        return "(empty)"
-    return _code_span(text)
-
-
 def _detail_lines(key: str, value: Any, indent: str) -> list[str]:
-    """Render one details entry as a nested Markdown bullet, recursing into mappings.
-
-    A mapping (the Hayabusa ``fields`` block, say) becomes a nested bullet list, a
-    list renders inline, and a scalar renders as an inline code span. This carries
-    the same source specifics the HTML appendix shows, for ticket-only audit.
-    Keys are evidence-derived too, so they are neutralized like any other text.
-    """
+    """Render one details entry as a nested bullet, recursing into mappings."""
     label = _cell(key)
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         if not value:
             return [f"{indent}- {label}: (none)"]
         out = [f"{indent}- {label}:"]
@@ -126,116 +102,222 @@ def _detail_lines(key: str, value: Any, indent: str) -> list[str]:
     if isinstance(value, (list, tuple)):
         if not value:
             return [f"{indent}- {label}: (none)"]
-        return [f"{indent}- {label}: " + ", ".join(_inline(item) for item in value)]
-    return [f"{indent}- {label}: {_inline(value)}"]
+        return [f"{indent}- {label}: " + ", ".join(_mono(item) or "(empty)" for item in value)]
+    return [f"{indent}- {label}: {_mono(value) or '(empty)'}"]
 
 
-def _render(model: ReportModel) -> str:
-    """Render the shared report model to a Markdown document."""
+def _entry_lines(entry: NarrativeEntry, verified: bool) -> list[str]:
+    techniques = " ".join(f"`{tech.technique_id}`" for tech in entry.techniques)
+    lines = [f"- `{_time(entry.datetime)}` {_cell(entry.statement)}"]
+    detail = f"  {_cell(entry.detection)}"
+    if entry.host:
+        detail = f"  {_cell(entry.host)}: {_cell(entry.detection)}"
+    if techniques:
+        detail += f" {techniques}"
+    lines.append(detail)
+    evidence = f"  Backing evidence: `{_short(entry.backing_event_id)}`"
+    if verified:
+        evidence += f" (verified: {', '.join(entry.verified_fields)}"
+        if entry.round_index:
+            evidence += f"; accepted after revision round {entry.round_index}"
+        evidence += ")"
+    if entry.context_citations:
+        context = ", ".join(f"`{_short(cid)}`" for cid in entry.context_citations)
+        evidence += f"; also cited for context: {context}"
+    lines.append(evidence)
+    return lines
+
+
+def _grouped(model: ReportModel, entries: Sequence[NarrativeEntry], verified: bool) -> list[str]:
     lines: list[str] = []
+    by_episode: dict[str | None, list[NarrativeEntry]] = {}
+    for entry in entries:
+        by_episode.setdefault(entry.episode_id, []).append(entry)
+    for episode in model.episodes:
+        members = by_episode.get(episode["episode_id"])
+        if not members:
+            continue
+        host = _cell(episode["host"]) or "unattributed host"
+        principal = _mono(episode["principal"]) or "unattributed"
+        lines.append(
+            f"### `{episode['episode_id']}` {host}, {principal}, "
+            f"{_time(episode['start'])} to {_time(episode['end'])}"
+        )
+        lines.append("")
+        for entry in members:
+            lines.extend(_entry_lines(entry, verified))
+        lines.append("")
+    for entry in by_episode.get(None, []):
+        lines.extend(_entry_lines(entry, verified))
+    return lines
 
-    lines.append("# Casebound investigation report")
-    lines.append("")
-    lines.append(
-        f"Scenario: {_cell(model.scenario)}. Source tool: {_cell(model.source_tool)}. "
-        f"Narrative: {_cell(model.model_label)}."
-    )
-    lines.append("")
-    lines.append(
-        "> The guarantee. No factual claim appears in the narrative below unless it "
-        "resolves to a real, deterministically extracted timeline event by id and its "
-        "asserted facts (time, principal, action, object) are consistent with that event. "
-        "The deterministic timeline and appendix are the source of truth; the language "
-        "model never decides what is true."
-    )
-    lines.append("")
 
-    # Summary.
+def _render(model: ReportModel, max_events: int | None) -> str:
+    lines: list[str] = []
     stats = model.stats
+
+    lines.append(f"# {_cell(model.case_name)}")
+    lines.append("")
+    evidence = "; ".join(
+        f"{_cell(item['source'])}: {_mono(item['file'])} ({item['records']} records)"
+        for item in model.inputs
+    )
+    lines.append(f"Casebound investigation report. Evidence: {evidence}.")
+    lines.append(
+        f"Narrative: {_cell(model.narrative_label)}. ATT&CK Enterprise "
+        f"{model.attack.attack_version}. Generated by {model.generator}, offline."
+    )
+    lines.append("")
+    lines.append(
+        "> The guarantee. Every sentence in the narrative is composed from the fields of "
+        "the timeline event it cites. A claim reaches this report only after a "
+        "deterministic verifier confirmed its cited event exists and matches every fact "
+        "it asserted (time, principal, action, object); rejected claims appear only in "
+        "the audit."
+    )
+    lines.append("")
+
     lines.append("## Summary")
     lines.append("")
-    lines.append("|Metric|Count|")
-    lines.append("|------|----:|")
-    lines.append(f"|Timeline events|{stats['events']}|")
-    lines.append(f"|Hosts|{stats['hosts']}|")
-    lines.append(f"|ATT&CK techniques|{stats['techniques']}|")
-    lines.append(f"|Verified claims|{stats['accepted']}|")
-    lines.append(f"|Rejected claims|{stats['rejected']}|")
-    lines.append(f"|Activity episodes|{stats['episodes']}|")
-    lines.append(f"|Indicators|{stats['iocs']}|")
+    lines.append("|Measure|Count|")
+    lines.append("|-------|----:|")
+    rows = [
+        ("Events", stats["events"]),
+        ("Hosts", stats["hosts"]),
+        ("ATT&CK techniques", stats["techniques"]),
+        ("Activity episodes", stats["episodes"]),
+        ("Indicators", stats["iocs"]),
+    ]
+    if not model.no_model:
+        rows += [
+            ("Verified claims", stats["narrative_entries"]),
+            ("Rejected claims", stats["rejected_claims"]),
+        ]
+    if stats["problems"]:
+        rows.append(("Unparsed rows", stats["problems"]))
+    lines.extend(f"|{label}|{count}|" for label, count in rows)
     lines.append("")
-    if model.observed_techniques:
-        observed = ", ".join(f"`{tid}`" for tid in model.observed_techniques)
-        lines.append(f"Observed techniques: {observed}")
-        lines.append("")
 
-    # Verified narrative.
-    lines.append("## Verified narrative")
-    lines.append("")
     if model.no_model:
+        lines.append("## Key findings")
+        lines.append("")
         lines.append(
-            "No language model configured. This is the deterministic report (the no-model "
-            "path): the normalized timeline, the ATT&CK tags, the episodes, the indicators, "
-            "and the evidence appendix below. Configure a local model to add the verified "
-            "narrative."
+            "No language model configured. This is the deterministic report: every event "
+            "that exhibits an ATT&CK technique or that its detection rule rated high or "
+            "critical, phrased from its own fields and grouped by episode."
         )
         lines.append("")
-    elif model.accepted:
+        if model.findings:
+            lines.extend(_grouped(model, model.findings[: max_events or None], verified=False))
+        else:
+            lines.append("No event carries an ATT&CK technique or a high severity.")
+            lines.append("")
+    else:
+        lines.append("## Verified narrative")
+        lines.append("")
         lines.append(
-            "Each statement is rendered from fields the verifier checked against the cited "
-            "event, never from the model's free prose. Every citation resolves to an event "
-            "in the appendix below."
+            "Each sentence is composed from the fields of the event it cites. The model "
+            "selected the events; the verifier confirmed each claim against its event."
         )
         lines.append("")
-        for claim in model.accepted:
-            lines.append(f"- {_cell(claim.statement)}")
-            cite = f"  Backing evidence: `{_short(claim.backing_event_id)}`"
-            if claim.context_citations:
-                context = ", ".join(f"`{_short(cid)}`" for cid in claim.context_citations)
-                cite += f" (also cited for context: {context})"
-            lines.append(cite)
-        lines.append("")
-    else:
-        lines.append("The model proposed no claim that survived verification.")
-        lines.append("")
+        if model.narrative:
+            lines.extend(_grouped(model, model.narrative, verified=True))
+        else:
+            lines.append("The model proposed no claim that survived verification.")
+            lines.append("")
 
-    # Rejected-claims audit.
-    lines.append("## Rejected-claims audit")
-    lines.append("")
-    lines.append(
-        "Every claim the verifier rejected is recorded here for transparency, with the "
-        "reason it failed. A dropped claim never reached the narrative above."
-    )
-    lines.append("")
-    if model.audit:
-        for entry in model.audit:
-            flags = entry["reason"]
-            if entry["dropped"]:
-                flags += ", dropped"
-            lines.append(f"- [{flags}] (round {entry['round_index']}) {_cell(entry['claim_text'])}")
-            lines.append(f"  Reason: {_cell(entry['detail'])}")
-            if entry["citations"]:
-                # Audit citations include the malformed ones: arbitrary
-                # model-authored strings, so they get the breakout-proof span.
-                cited = ", ".join(_mono(cid) for cid in entry["citations"])
-                lines.append(f"  Cited: {cited}")
+        lines.append("## Rejected-claims audit")
         lines.append("")
-    else:
-        lines.append("No claims were rejected.")
+        lines.append(
+            "Every claim the verifier rejected, with the reason. A rejected draft is shown "
+            "only for review; it is not a finding."
+        )
         lines.append("")
+        if model.audit:
+            for entry in model.audit:
+                flags = entry["reason"] + (", dropped" if entry["dropped"] else "")
+                lines.append(
+                    f"- \\[{flags}\\] (round {entry['round_index']}) model draft: "
+                    f"{_cell(entry['claim_text'])}"
+                )
+                lines.append(f"  Reason: {_cell(entry['detail'])}")
+                if entry["citations"]:
+                    cited = ", ".join(_mono(cid) for cid in entry["citations"])
+                    lines.append(f"  Cited: {cited}")
+            lines.append("")
+        else:
+            lines.append("No claims were rejected.")
+            lines.append("")
 
-    # Deterministic timeline.
-    lines.append("## Deterministic timeline")
+    lines.append("## ATT&CK matrix")
     lines.append("")
-    lines.append(
-        "Every event normalized to the canonical schema and tagged with ATT&CK "
-        "deterministically. The event handle links to its full record in the appendix."
-    )
+    if model.attack.columns:
+        for column in model.attack.columns:
+            cells = ", ".join(
+                f"`{cell.technique_id}` {_cell(cell.name)} ({cell.count})" for cell in column.cells
+            )
+            lines.append(f"- **{_cell(column.name)}**: {cells}")
+    else:
+        lines.append("No event carries an ATT&CK technique.")
+    for item in model.attack.unmapped:
+        lines.append(
+            f"- Not a current technique: `{item['technique_id']}` ({item['status']}, "
+            f"{item['count']} events)"
+        )
     lines.append("")
+
+    lines.append("## Activity episodes")
+    lines.append("")
+    if model.episodes:
+        lines.append("|Episode|Host|Principal|From (UTC)|To (UTC)|Events|Techniques|")
+        lines.append("|-------|----|---------|----------|--------|-----:|----------|")
+        for episode in model.episodes:
+            techniques = " ".join(f"`{tid}`" for tid in episode["techniques"])
+            lines.append(
+                "|"
+                + "|".join(
+                    [
+                        f"`{episode['episode_id']}`",
+                        _cell(episode["host"]) or "unattributed",
+                        _mono(episode["principal"]) or "unattributed",
+                        _cell(episode["start"]),
+                        _cell(episode["end"]),
+                        str(episode["event_count"]),
+                        techniques,
+                    ]
+                )
+                + "|"
+            )
+    else:
+        lines.append("No episodes were formed.")
+    lines.append("")
+
+    lines.append("## Indicators of compromise")
+    lines.append("")
+    if model.iocs:
+        lines.append("|Type|Indicator (defanged)|Events|")
+        lines.append("|----|--------------------|-----:|")
+        for ioc in model.iocs:
+            lines.append(
+                f"|{_cell(ioc['ioc_type'])}|{_mono(ioc['defanged'])}|{ioc['event_count']}|"
+            )
+    else:
+        lines.append("No indicators were extracted.")
+    lines.append("")
+
+    shown, capped = model.displayed_events(max_events)
+    lines.append("## Timeline")
+    lines.append("")
+    if capped:
+        lines.append(
+            f"This case has {stats['events']} events; the {len(shown)} notable ones are "
+            "shown here. Every event is in report.json and events.jsonl."
+        )
+        lines.append("")
     lines.append("|Time (UTC)|Host|Principal|Action|Object|ATT&CK|Event|")
     lines.append("|----------|----|---------|------|------|------|-----|")
-    for event in model.events:
-        techniques = " ".join(f"`{tid}`" for tid in event["techniques"]) or ""
+    for event in shown:
+        techniques = " ".join(f"`{tech['technique_id']}`" for tech in event["techniques"])
         lines.append(
             "|"
             + "|".join(
@@ -253,86 +335,30 @@ def _render(model: ReportModel) -> str:
         )
     lines.append("")
 
-    # Activity episodes.
-    lines.append("## Activity episodes")
-    lines.append("")
-    lines.append(
-        "Events grouped into episodes by host, principal, and time proximity. Each episode "
-        "is one actor's coherent run of activity on one host."
-    )
-    lines.append("")
-    if model.episodes:
-        for episode in model.episodes:
-            host = _cell(episode["host"]) or "unattributed"
-            principal = _mono(episode["principal"]) or "`unattributed`"
-            members = ", ".join(f"`{_short(eid)}`" for eid in episode["event_ids"])
-            lines.append(
-                f"- `{episode['episode_id']}` on {host}, principal {principal}: "
-                f"{episode['event_count']} event(s) from {episode['start']} to {episode['end']}."
-            )
-            lines.append(f"  Events: {members}")
-        lines.append("")
-    else:
-        lines.append("No episodes were formed.")
-        lines.append("")
-
-    # Indicators of compromise.
-    lines.append("## Indicators of compromise")
-    lines.append("")
-    lines.append(
-        "Indicators extracted from the events and defanged for safe handling: IPs and "
-        "domains have their dots bracketed, hashes and paths are listed verbatim."
-    )
-    lines.append("")
-    if model.iocs:
-        lines.append("|Type|Indicator (defanged)|Events|")
-        lines.append("|----|--------------------|-----:|")
-        for ioc in model.iocs:
-            lines.append(
-                "|"
-                + "|".join(
-                    [
-                        _cell(ioc["ioc_type"]),
-                        _mono(ioc["defanged"]),
-                        str(ioc["event_count"]),
-                    ]
-                )
-                + "|"
-            )
-        lines.append("")
-    else:
-        lines.append("No indicators were extracted.")
-        lines.append("")
-
-    # Evidence appendix.
     lines.append("## Evidence appendix")
     lines.append("")
-    lines.append(
-        "The full canonical record for every event, with its source provenance for audit. "
-        "This is the deterministic source of truth the narrative is fenced to."
-    )
+    lines.append("The full canonical record of each event, with the source records it came from.")
     lines.append("")
-    for event in model.events:
+    for event in shown:
         lines.append(f"### `{event['event_id']}`")
         lines.append("")
         lines.append(f"- message: {_cell(event['message'])}")
         lines.append(f"- datetime: `{_cell(event['datetime'])}` ({_cell(event['timestamp_desc'])})")
+        lines.append(f"- timestamp_raw: {_mono(event['timestamp_raw'])}")
         lines.append(f"- host: {_cell(event['host'])}")
         lines.append(f"- principal: {_mono(event['principal'])}")
         lines.append(f"- action: {_mono(event['action'])}")
         lines.append(f"- object: {_mono(event['object'])}")
         lines.append(f"- source: {_cell(event['source_tool'])} / {_cell(event['source_artifact'])}")
-        if event["attack_techniques"]:
+        if event["techniques"]:
             tags = ", ".join(
-                f"`{tag['technique_id']}` ({tag['mapping_source']})"
-                for tag in event["attack_techniques"]
+                f"`{tech['technique_id']}` ({_cell(tech['mapping_source'])})"
+                for tech in event["techniques"]
             )
             lines.append(f"- attack_techniques: {tags}")
         if event["episode_id"]:
             lines.append(f"- episode: `{event['episode_id']}`")
         if event["referenced_iocs"]:
-            # Path indicators are evidence-derived verbatim text, so they get the
-            # breakout-proof span like the indicator table above.
             iocs = ", ".join(
                 f"{_mono(ioc['defanged'])} ({_cell(ioc['type'])})"
                 for ioc in event["referenced_iocs"]
@@ -343,74 +369,49 @@ def _render(model: ReportModel) -> str:
             for key, value in event["details"].items():
                 lines.extend(_detail_lines(str(key), value, "  "))
         if event["provenance"]:
-            provenance = ", ".join(_mono(ref) for ref in event["provenance"])
-            lines.append(f"- provenance: {provenance}")
+            lines.append("- provenance: " + ", ".join(_mono(ref) for ref in event["provenance"]))
+        lines.append("")
+
+    if model.problems:
+        lines.append("## Unparsed rows")
+        lines.append("")
+        for problem in model.problems[:_PROBLEM_LIST_LIMIT]:
+            lines.append(
+                f"- {_mono(problem['source_file'])} {_mono(problem['record'])}: "
+                f"{_cell(problem['reason'])}"
+            )
+        if len(model.problems) > _PROBLEM_LIST_LIMIT:
+            lines.append(
+                f"- and {len(model.problems) - _PROBLEM_LIST_LIMIT} more (see report.json)"
+            )
         lines.append("")
 
     lines.append(
-        "Generated by Casebound from already-collected evidence, read-only. Citation "
-        "accuracy is 1.0 by construction: every claim above resolves to a "
-        "field-consistent event."
+        f"Generated by {model.generator} from already-collected evidence, read-only. "
+        "Casebound assists a qualified analyst; it does not replace one."
     )
     lines.append("")
     return "\n".join(lines)
 
 
-def render_markdown_report(
-    events: Sequence[Event],
-    verification: VerificationResult | None,
+def render_markdown(
+    case: Case,
     *,
-    scenario: str,
-    source_tool: str = "hayabusa",
-    model_label: str | None = None,
-    provenance: Mapping[str, Sequence[RawRef]] | None = None,
-    episodes: Sequence[Episode] | None = None,
-    iocs: IocSet | None = None,
+    model: ReportModel | None = None,
+    max_events: int | None = DEFAULT_MARKDOWN_MAX_EVENTS,
 ) -> str:
-    """Render the ticket-ready Markdown report from the pipeline output (FR30).
-
-    Mirrors ``render_report`` (HTML) exactly in its inputs and content. Returns a
-    deterministic Markdown string with a trailing newline.
-    """
-    model = build_report_model(
-        events,
-        verification,
-        scenario=scenario,
-        source_tool=source_tool,
-        model_label=model_label,
-        provenance=provenance,
-        episodes=episodes,
-        iocs=iocs,
-    )
-    return _render(model)
+    """Render the ticket-ready Markdown report for ``case`` (FR30)."""
+    return _render(model if model is not None else build_report_model(case), max_events)
 
 
-def write_markdown_report(
+def write_markdown(
     path: Path,
-    events: Sequence[Event],
-    verification: VerificationResult | None,
+    case: Case,
     *,
-    scenario: str,
-    source_tool: str = "hayabusa",
-    model_label: str | None = None,
-    provenance: Mapping[str, Sequence[RawRef]] | None = None,
-    episodes: Sequence[Episode] | None = None,
-    iocs: IocSet | None = None,
+    model: ReportModel | None = None,
+    max_events: int | None = DEFAULT_MARKDOWN_MAX_EVENTS,
 ) -> Path:
-    """Render the Markdown report and write it to ``path``, returning the path written.
-
-    Creates the parent directory if needed. Offline, no network.
-    """
-    text = render_markdown_report(
-        events,
-        verification,
-        scenario=scenario,
-        source_tool=source_tool,
-        model_label=model_label,
-        provenance=provenance,
-        episodes=episodes,
-        iocs=iocs,
-    )
+    """Render the Markdown report and write it to ``path``, returning the path written."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    path.write_text(render_markdown(case, model=model, max_events=max_events), encoding="utf-8")
     return path

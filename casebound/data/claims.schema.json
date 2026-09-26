@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/NotACop38/Casebound/main/casebound/data/claims.schema.json",
+  "title": "Casebound narrative claims",
+  "description": "The output a narrative model returns: a list of claims, each citing canonical event ids and asserting the facts it states. The verifier accepts a claim only when one cited event matches every non-null asserted field. See docs/verification.md. This form is strict (every property required, nullable where optional) so it can constrain a model's structured output directly.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["claims"],
+  "properties": {
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "citations", "asserts", "revises"],
+        "properties": {
+          "text": {
+            "description": "A readable sentence for the audit trail. Never shown as a fact: the report phrases accepted claims from the cited event's own fields.",
+            "type": "string"
+          },
+          "citations": {
+            "description": "The event_id values (64 lowercase hex characters) the claim rests on.",
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "asserts": {
+            "description": "The facts the claim states, copied exactly from the cited event. Null means the claim does not assert that field.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["datetime", "principal", "action", "object"],
+            "properties": {
+              "datetime": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+              "principal": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+              "action": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+              "object": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+            }
+          },
+          "revises": {
+            "description": "On a revision round, the claim_id of the rejected claim this one replaces; null otherwise.",
+            "anyOf": [{ "type": "string" }, { "type": "null" }]
+          }
+        }
+      }
+    }
+  }
+}

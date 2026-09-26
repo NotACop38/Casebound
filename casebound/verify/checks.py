@@ -20,7 +20,7 @@ Style: no em dashes or en dashes anywhere (PRD Section 15).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -97,6 +97,20 @@ class ClaimVerdict:
         }
 
 
+def quote(value: str) -> str:
+    """Quote a value for a human-readable rejection detail.
+
+    Deliberately not ``repr``: a repr doubles every backslash, so a Windows account
+    such as ``CORP\\jdoe`` would read as ``'CORP\\\\jdoe'`` in the audit log.
+    """
+    return "'" + value.replace("'", "\\'") + "'"
+
+
+def _quote_all(values: Iterable[str]) -> str:
+    """Quote and comma-join several values for a rejection detail."""
+    return ", ".join(quote(value) for value in values)
+
+
 def _parse_utc(value: str) -> datetime | None:
     """Parse an asserted timestamp into a UTC instant, or None if unparseable.
 
@@ -135,14 +149,14 @@ def _check_datetime(asserted: str, actual: str, tolerance: timedelta) -> str | N
     """
     asserted_dt = _parse_utc(asserted)
     if asserted_dt is None:
-        return f"asserted time {asserted!r} is not a parseable instant"
+        return f"asserted time {quote(asserted)} is not a parseable instant"
     actual_dt = _parse_utc(actual)
     # The event datetime is canonical UTC and always parses; guard defensively.
     if actual_dt is None:  # pragma: no cover - canonical events always parse
         return "the cited event's time is not a parseable instant"
     if abs(asserted_dt - actual_dt) > tolerance:
         return (
-            f"asserted time {asserted!r} differs from the cited event's time "
+            f"asserted time {quote(asserted)} differs from the cited event's time "
             f"by more than the tolerance ({tolerance})"
         )
     return None
@@ -176,7 +190,7 @@ def _check_event(
     ):
         return (
             RejectionReason.PRINCIPAL_MISMATCH,
-            f"asserted principal {asserts.principal!r} does not match the principal "
+            f"asserted principal {quote(asserts.principal)} does not match the principal "
             f"of event {short_id}",
         )
 
@@ -185,7 +199,8 @@ def _check_event(
     ):
         return (
             RejectionReason.ACTION_MISMATCH,
-            f"asserted action {asserts.action!r} does not match the action of event {short_id}",
+            f"asserted action {quote(asserts.action)} does not match the action of event "
+            f"{short_id}",
         )
 
     if asserts.object is not None and (
@@ -193,7 +208,8 @@ def _check_event(
     ):
         return (
             RejectionReason.OBJECT_MISMATCH,
-            f"asserted object {asserts.object!r} does not match the object of event {short_id}",
+            f"asserted object {quote(asserts.object)} does not match the object of event "
+            f"{short_id}",
         )
 
     return None
@@ -222,7 +238,7 @@ def verify_claim(
         return ClaimVerdict(
             ok=False,
             reason=RejectionReason.MALFORMED_CITATION,
-            detail=f"claim carries malformed citations: {list(claim.malformed_citations)}",
+            detail=f"claim carries malformed citations: {_quote_all(claim.malformed_citations)}",
         )
     if not claim.citations:
         return ClaimVerdict(
@@ -249,7 +265,7 @@ def verify_claim(
         return ClaimVerdict(
             ok=False,
             reason=RejectionReason.MISSING_ID,
-            detail=f"cited event ids do not exist in the store: {missing}",
+            detail=f"cited event ids do not exist in the store: {_quote_all(missing)}",
         )
     cited_events = [(cid, event_index[cid]) for cid in claim.citations]
 

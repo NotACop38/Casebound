@@ -17,10 +17,11 @@ removing the fields D5 calls out:
   - optionally the ``host``.
 
 What survives is what the verifier still needs to address an event and what carries
-no sensitive content: ``event_id``, ``datetime``, and ``action``. The redaction is
-lossy on purpose: the local verifier re-grounds every returned claim against the
-full, unredacted events, so a thinner cloud view never weakens the guarantee, it
-only limits what a cloud claim can assert.
+no sensitive content: ``event_id``, ``datetime``, ``action``, and the event's ATT&CK
+technique ids and detection severity. The redaction is lossy on purpose: the local
+verifier re-grounds every returned claim against the full, unredacted events, so a
+thinner cloud view never weakens the guarantee, it only limits what a cloud claim
+can assert.
 
 ``details`` is never present in the event view to begin with, so there is nothing
 to strip there; the structural fence already removed it.
@@ -167,4 +168,7 @@ def redact_view(view: EventView, config: RedactionConfig) -> dict[str, Any]:
         "action": view.action,
         "object": obj,
         "message": message,
+        # ATT&CK ids and a severity word describe the event's class, not its content.
+        "techniques": list(view.techniques),
+        "severity": view.severity,
     }

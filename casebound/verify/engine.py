@@ -4,6 +4,8 @@ This module drives the whole verification loop (FR17 to FR25):
 
   1. Build the compact, id-addressed event view the model is allowed to see
      (FR17, Hard rule 4): event_id plus the addressable fields, never raw files.
+     A large case is cut to a deterministic budget first, keeping the ATT&CK-tagged
+     and most severe events, so the prompt stays within a model's context.
   2. Ask the model to draft the narrative as id-cited claims.
   3. Verify every claim deterministically with ``checks.verify_claim``.
   4. Accept the supported claims; for the rejected ones, resubmit just those (with
@@ -26,9 +28,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
 from casebound.normalize.schema import Event
+from casebound.normalize.severity import normalize_severity, severity_rank
 from casebound.verify.checks import (
     ClaimVerdict,
     FieldTolerance,
@@ -40,8 +44,15 @@ from casebound.verify.claims import Claim, ClaimAssertion, ClaimParseError, pars
 # PRD Section 11 step 6: revise rejected claims up to max_rounds rounds, default 2.
 DEFAULT_MAX_ROUNDS = 2
 
+# The most events the model is shown in one prompt. At roughly a hundred tokens per
+# compact view this keeps a round well inside a local model's context window while
+# covering every tagged event of a typical triage case; a larger case is cut to
+# this budget deterministically (see ``select_view_events``). Override per run.
+DEFAULT_VIEW_BUDGET = 300
+
 __all__ = [
     "DEFAULT_MAX_ROUNDS",
+    "DEFAULT_VIEW_BUDGET",
     "AuditEntry",
     "DraftRequest",
     "EventView",
@@ -50,6 +61,7 @@ __all__ = [
     "VerificationResult",
     "VerifiedClaim",
     "build_event_view",
+    "select_view_events",
     "verify_narrative",
 ]
 
@@ -58,11 +70,13 @@ __all__ = [
 class EventView:
     """The compact, id-addressed view of one event shown to the model (FR17).
 
-    Exactly the addressable fields: the id plus the fields the verifier can check,
-    and the short normalized ``message``. It deliberately omits ``details``, command
-    lines, file contents, and any raw artifact, which is the structural fence in
-    Hard rule 4: the model can only address events by id and reason over these
-    reduced fields.
+    Exactly the addressable fields the verifier can check (datetime, principal,
+    action, object), the id that addresses the event, and four pieces of
+    deterministic context that help a model choose what matters: the host, the
+    short normalized ``message``, the event's ATT&CK technique ids, and the source's
+    detection severity. It deliberately omits ``details``, command lines, file
+    contents, and any raw artifact, which is the structural fence in Hard rule 4:
+    the model can only address events by id and reason over these reduced fields.
     """
 
     event_id: str
@@ -72,6 +86,8 @@ class EventView:
     action: str
     object: str | None
     message: str
+    techniques: tuple[str, ...] = ()
+    severity: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Render the view as a JSON-ready dict for the model prompt."""
@@ -83,15 +99,52 @@ class EventView:
             "action": self.action,
             "object": self.object,
             "message": self.message,
+            "techniques": list(self.techniques),
+            "severity": self.severity,
         }
+
+
+def _event_severity(event: Event) -> str | None:
+    """The event's normalized detection severity, from its source's level."""
+    return normalize_severity(event.details.get("level"))
+
+
+def _instant(event: Event) -> datetime:
+    """The event's UTC instant, for chronological ordering."""
+    return datetime.fromisoformat(event.datetime.replace("Z", "+00:00"))
+
+
+def select_view_events(events: Sequence[Event], budget: int | None) -> list[Event]:
+    """Choose, deterministically, which events the model is shown.
+
+    With no budget, or a case within it, every event is shown in chronological
+    order. Otherwise events are ranked by whether they carry an ATT&CK technique,
+    then by detection severity, then chronologically, and the top ``budget`` are
+    shown in chronological order. The cut never affects verification: a claim is
+    checked against every event in the case, shown or not.
+    """
+    ordered = sorted(events, key=lambda event: (_instant(event), event.event_id))
+    if budget is None or len(ordered) <= budget:
+        return ordered
+    ranked = sorted(
+        ordered,
+        key=lambda event: (
+            not event.attack_techniques,
+            -severity_rank(_event_severity(event)),
+            _instant(event),
+            event.event_id,
+        ),
+    )
+    chosen = {event.event_id for event in ranked[: max(budget, 0)]}
+    return [event for event in ordered if event.event_id in chosen]
 
 
 def build_event_view(events: Iterable[Event]) -> tuple[EventView, ...]:
     """Reduce canonical events to the compact view the model is allowed to see.
 
     This is the only event representation that should ever reach a model. It drops
-    everything outside the addressable fields, so raw evidence cannot leak into the
-    prompt (Hard rule 4, FR17).
+    everything outside the addressable fields and the deterministic context above,
+    so raw evidence cannot leak into the prompt (Hard rule 4, FR17).
     """
     return tuple(
         EventView(
@@ -102,6 +155,8 @@ def build_event_view(events: Iterable[Event]) -> tuple[EventView, ...]:
             action=event.action,
             object=event.object,
             message=event.message,
+            techniques=tuple(dict.fromkeys(tech.technique_id for tech in event.attack_techniques)),
+            severity=_event_severity(event),
         )
         for event in events
     )
@@ -143,11 +198,19 @@ class DraftRequest:
     ``events`` is the compact view (the only evidence the model sees). On the first
     round ``revisions`` is empty; on later rounds it holds the claims to revise.
     ``round_index`` is 0 for the initial draft and increments per revision round.
+    ``total_events`` is the size of the whole case, so a prompt can say how many
+    lower-priority events the view budget left out.
     """
 
     events: tuple[EventView, ...]
     round_index: int
     revisions: tuple[RevisionRequest, ...] = ()
+    total_events: int = 0
+
+    @property
+    def omitted_events(self) -> int:
+        """How many events of the case the view budget left out of this prompt."""
+        return max(self.total_events - len(self.events), 0)
 
     @property
     def is_revision(self) -> bool:
@@ -367,6 +430,7 @@ def verify_narrative(
     *,
     max_rounds: int = DEFAULT_MAX_ROUNDS,
     tolerance: FieldTolerance | None = None,
+    view_budget: int | None = DEFAULT_VIEW_BUDGET,
 ) -> VerificationResult:
     """Run the generate-test-refine loop and return the verified narrative.
 
@@ -378,14 +442,19 @@ def verify_narrative(
     that no revision addresses (the model omitted it, or the output was unparseable)
     is carried to the final round and then dropped. After the final round, every
     still-unsupported claim is dropped (FR24) and every rejection is recorded in the
-    audit log (FR25). The model only ever sees the compact view (Hard rule 4).
+    audit log (FR25). The model only ever sees the compact view (Hard rule 4), cut
+    to ``view_budget`` events for a large case (``select_view_events``); None shows
+    every event. Every claim is still verified against the whole case.
     """
     if max_rounds < 0:
         raise ValueError("max_rounds must be zero or greater")
+    if view_budget is not None and view_budget < 1:
+        raise ValueError("view_budget must be at least 1, or None for no budget")
 
     tol = tolerance if tolerance is not None else FieldTolerance()
     event_index = {event.event_id: event for event in events}
-    views = build_event_view(events)
+    views = build_event_view(select_view_events(events, view_budget))
+    total = len(event_index)
 
     accepted: list[VerifiedClaim] = []
     audit: list[AuditEntry] = []
@@ -401,7 +470,9 @@ def verify_narrative(
         return claim_id
 
     # Round 0: the initial draft.
-    initial = _safe_parse(model.draft(DraftRequest(events=views, round_index=0, revisions=())))
+    initial = _safe_parse(
+        model.draft(DraftRequest(events=views, round_index=0, revisions=(), total_events=total))
+    )
     rounds_used = 1
     round0_final = max_rounds == 0
     for claim in initial:
@@ -428,7 +499,14 @@ def verify_narrative(
             for claim_id, (claim, verdict) in pending.items()
         )
         revised = _safe_parse(
-            model.draft(DraftRequest(events=views, round_index=round_index, revisions=revisions))
+            model.draft(
+                DraftRequest(
+                    events=views,
+                    round_index=round_index,
+                    revisions=revisions,
+                    total_events=total,
+                )
+            )
         )
         rounds_used = round_index + 1
 

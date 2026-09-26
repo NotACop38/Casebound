@@ -22,13 +22,19 @@ All tests use a mocked model provider. No network, no API keys.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
+
+from casebound.enrich.attack import tag_events
 from casebound.generate.synth import write_samples
 from casebound.ingest import HayabusaAdapter
 from casebound.normalize import Event, normalize_records
+from casebound.normalize.schema import KNOWN_ACTIONS
 from casebound.verify import (
     ClaimParseError,
     DraftRequest,
@@ -37,6 +43,8 @@ from casebound.verify import (
     verify_claim,
     verify_narrative,
 )
+from casebound.verify.claims import Claim
+from casebound.verify.engine import select_view_events
 
 # The bundled hallucination-trap fixture (PRD FR35), built against the default
 # seed so its hardcoded event ids match the scenario the test regenerates.
@@ -262,18 +270,20 @@ def test_claim_without_assertions_is_rejected(tmp_path: Path) -> None:
 
 
 def test_principal_assertion_against_null_event_field_is_rejected(tmp_path: Path) -> None:
-    # The lsass process-access event has a null principal, so asserting any
-    # principal for it cannot be satisfied: you cannot assert a fact the evidence
-    # does not record.
+    # The malicious service install on the file server records no principal (the
+    # System log's 7045 names none), so asserting any principal for it cannot be
+    # satisfied: you cannot assert a fact the evidence does not record.
     events = _events(tmp_path)
-    lsass = next(e for e in events if e.object and e.object.lower().endswith("lsass.exe"))
-    assert lsass.principal is None
+    install = next(
+        e for e in events if e.action == "service_install" and e.datetime == "2026-03-14T08:56:40Z"
+    )
+    assert install.principal is None
     [claim] = parse_claims(
         _response(
             {
-                "text": "CORP\\jdoe opened a handle into lsass.",
-                "citations": [lsass.event_id],
-                "asserts": {"principal": "CORP\\jdoe"},
+                "text": "CORP\\svc-backup installed the service.",
+                "citations": [install.event_id],
+                "asserts": {"principal": "CORP\\svc-backup"},
             }
         )
     )
@@ -359,7 +369,8 @@ def test_model_sees_only_the_compact_view_not_raw_evidence(tmp_path: Path) -> No
 
     request = model.requests[0]
     serialized = json.dumps([view.to_dict() for view in request.events])
-    # The reduced view exposes only the addressable fields, never details.
+    # The reduced view exposes only the addressable fields plus the event's ATT&CK
+    # technique ids and detection severity, never details.
     for view in request.events:
         assert set(view.to_dict()) == {
             "event_id",
@@ -369,6 +380,8 @@ def test_model_sees_only_the_compact_view_not_raw_evidence(tmp_path: Path) -> No
             "action",
             "object",
             "message",
+            "techniques",
+            "severity",
         }
     # The encoded PowerShell blob lives in event.details (raw evidence) and must
     # not leak into anything the model is shown.
@@ -669,16 +682,25 @@ def test_accepted_claim_renders_the_events_canonical_fields(tmp_path: Path) -> N
     assert target.principal.upper() not in statement
     assert target.object.lower() not in statement
 
-    # Every report format renders through the shared model, which uses the same
-    # canonical snapshot.
-    from casebound.report.model import build_report_model
+    # Every report format renders through the shared model, which phrases the
+    # narrative from the backing event's own fields, never the model's.
+    from casebound.pipeline import case_from_events
+    from casebound.report import build_report_model, phrase_event, render_html, render_markdown
 
-    report = build_report_model(events, result, scenario="canonical-render-test")
-    [report_claim] = report.accepted
-    assert target.principal in report_claim.statement
-    assert target.datetime in report_claim.statement
-    assert offset_time not in report_claim.statement
-    assert report_claim.asserts["principal"] == target.principal
+    case = case_from_events(events, name="canonical-render-test", verification=result)
+    report = build_report_model(case)
+    [entry] = report.narrative
+    assert entry.backing_event_id == PROCESS_CREATE_ID
+    assert entry.statement == phrase_event(target)
+    assert target.principal in entry.statement
+    assert entry.datetime == target.datetime
+    assert set(entry.verified_fields) == {"datetime", "principal", "action", "object"}
+    for rendered in (render_html(case), render_markdown(case)):
+        # Neither the accepted claim's prose nor the model's spellings reach a
+        # reader; the rejected claim appears only in the labeled audit.
+        assert "The user ran PowerShell." not in rendered
+        assert target.principal.upper() not in rendered
+        assert offset_time not in rendered
 
 
 def test_claim_with_no_citation_at_all_is_rejected(tmp_path: Path) -> None:
@@ -699,3 +721,161 @@ def test_claim_with_no_citation_at_all_is_rejected(tmp_path: Path) -> None:
     result = verify_narrative(events, model, max_rounds=0)
     assert result.accepted == ()
     assert result.dropped[0].reason is RejectionReason.NO_CITATIONS
+
+
+# 10. The view budget decides what the model is shown, never what is verified.
+
+
+def test_view_budget_shows_tagged_and_severe_events_first(tmp_path: Path) -> None:
+    events = tag_events(_events(tmp_path))
+    chosen = select_view_events(events, 5)
+    assert len(chosen) == 5
+    # Every shown event carries a technique, and none left out outranks them.
+    assert all(event.attack_techniques for event in chosen)
+    # The shown events keep chronological order.
+    assert chosen == sorted(chosen, key=lambda event: (event.datetime, event.event_id))
+
+
+def test_no_budget_or_a_small_case_shows_every_event(tmp_path: Path) -> None:
+    events = tag_events(_events(tmp_path))
+    assert len(select_view_events(events, None)) == len(events)
+    assert len(select_view_events(events, len(events))) == len(events)
+
+
+def test_budgeted_request_reports_how_many_events_were_left_out(tmp_path: Path) -> None:
+    events = tag_events(_events(tmp_path))
+    model = StubModel([_response()])
+    verify_narrative(events, model, view_budget=5)
+    request = model.requests[0]
+    assert len(request.events) == 5
+    assert request.total_events == len(events)
+    assert request.omitted_events == len(events) - 5
+
+
+def test_claims_are_verified_against_the_whole_case_not_the_view(tmp_path: Path) -> None:
+    # Grounded accept and fabricated reject for an event the budget kept out of the
+    # view: the cut changes what the model sees, never what the verifier checks.
+    events = tag_events(_events(tmp_path))
+    shown = {event.event_id for event in select_view_events(events, 1)}
+    hidden = next(event for event in events if event.event_id not in shown)
+    grounded = {
+        "text": "A grounded claim about an event outside the view.",
+        "citations": [hidden.event_id],
+        "asserts": {"datetime": hidden.datetime, "action": hidden.action},
+    }
+    fabricated = {
+        "text": "A fabricated claim about the same event.",
+        "citations": [hidden.event_id],
+        "asserts": {"datetime": hidden.datetime, "action": "log_clear"},
+    }
+    if hidden.action == "log_clear":  # pragma: no cover - the scenario's first event
+        fabricated["asserts"] = {"datetime": hidden.datetime, "action": "logon"}
+    result = verify_narrative(
+        events, StubModel([_response(grounded, fabricated)]), max_rounds=0, view_budget=1
+    )
+    assert [claim.backing_event_id for claim in result.accepted] == [hidden.event_id]
+    assert [entry.reason for entry in result.dropped] == [RejectionReason.ACTION_MISMATCH]
+
+
+def test_invalid_budget_and_rounds_are_refused(tmp_path: Path) -> None:
+    events = _events(tmp_path)
+    with pytest.raises(ValueError, match="view_budget"):
+        verify_narrative(events, StubModel([_response()]), view_budget=0)
+    with pytest.raises(ValueError, match="max_rounds"):
+        verify_narrative(events, StubModel([_response()]), max_rounds=-1)
+
+
+def test_rejection_detail_quotes_windows_paths_readably(tmp_path: Path) -> None:
+    # The audit log shows an asserted account as written, not repr-escaped.
+    events = _events(tmp_path)
+    [claim] = parse_claims(
+        _response(
+            {
+                "text": "The administrator ran PowerShell.",
+                "citations": [PROCESS_CREATE_ID],
+                "asserts": {"principal": "CORP\\Administrator"},
+            }
+        )
+    )
+    verdict = verify_claim(claim, {event.event_id: event for event in events})
+    assert "'CORP\\Administrator'" in verdict.detail
+    assert "\\\\" not in verdict.detail
+
+
+# 11. Properties: for every event in the scenario, the exact facts are accepted and
+#     any single fact changed beyond tolerance is rejected with the right reason.
+
+
+@pytest.fixture(scope="module")
+def scenario_index(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Event]:
+    csv_path, _ = write_samples(tmp_path_factory.mktemp("property"))
+    result = normalize_records(HayabusaAdapter().read(csv_path))
+    return {event.event_id: event for event in result.events}
+
+
+def _claim_for(event_id: str, asserts: dict[str, str]) -> Claim:
+    [claim] = parse_claims(_response({"text": "t", "citations": [event_id], "asserts": asserts}))
+    return claim
+
+
+def _exact_asserts(event: Event) -> dict[str, str]:
+    asserts = {"datetime": event.datetime, "action": event.action}
+    if event.principal is not None:
+        asserts["principal"] = event.principal
+    if event.object is not None:
+        asserts["object"] = event.object
+    return asserts
+
+
+@settings(
+    max_examples=200, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
+@given(data=st.data())
+def test_property_exact_facts_are_accepted(
+    scenario_index: dict[str, Event], data: st.DataObject
+) -> None:
+    event = data.draw(st.sampled_from(sorted(scenario_index.values(), key=lambda e: e.event_id)))
+    verdict = verify_claim(_claim_for(event.event_id, _exact_asserts(event)), scenario_index)
+    assert verdict.ok and verdict.backing_event_id == event.event_id
+
+
+@settings(
+    max_examples=300, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
+@given(data=st.data())
+def test_property_any_changed_fact_is_rejected(
+    scenario_index: dict[str, Event], data: st.DataObject
+) -> None:
+    event = data.draw(st.sampled_from(sorted(scenario_index.values(), key=lambda e: e.event_id)))
+    fields = ["datetime", "action"]
+    fields += [name for name in ("principal", "object") if getattr(event, name) is not None]
+    field = data.draw(st.sampled_from(fields))
+    asserts = _exact_asserts(event)
+
+    if field == "datetime":
+        # Anything more than the tolerance away, in either direction.
+        seconds = data.draw(st.integers(min_value=2, max_value=10**8))
+        sign = data.draw(st.sampled_from((-1, 1)))
+        moment = datetime.fromisoformat(event.datetime.replace("Z", "+00:00"))
+        asserts["datetime"] = (moment + timedelta(seconds=sign * seconds)).isoformat()
+        expected = RejectionReason.TIME_MISMATCH
+    elif field == "action":
+        asserts["action"] = data.draw(st.sampled_from(sorted(KNOWN_ACTIONS - {event.action})))
+        expected = RejectionReason.ACTION_MISMATCH
+    else:
+        actual = str(getattr(event, field))
+        value = data.draw(
+            st.text(min_size=1, max_size=40).filter(
+                lambda text: text.strip() and text.strip().casefold() != actual.casefold()
+            )
+        )
+        asserts[field] = value
+        expected = (
+            RejectionReason.PRINCIPAL_MISMATCH
+            if field == "principal"
+            else RejectionReason.OBJECT_MISMATCH
+        )
+
+    verdict = verify_claim(_claim_for(event.event_id, asserts), scenario_index)
+    assert not verdict.ok
+    assert verdict.reason is expected

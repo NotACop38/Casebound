@@ -23,6 +23,7 @@ from casebound.enrich import (
     episode_id_for_tag,
     tag_events,
 )
+from casebound.enrich.cluster import Episode, is_system_principal
 from casebound.generate.synth import write_samples
 from casebound.ingest import HayabusaAdapter
 from casebound.normalize import Event, RawRef, normalize_records
@@ -138,6 +139,54 @@ def test_unattributed_event_does_not_fragment_a_run() -> None:
 # 2. Stable id and tagging.
 
 
+def test_system_account_neither_splits_nor_changes_the_actor() -> None:
+    # A service the user started runs as SYSTEM between two of the user's events:
+    # one episode, attributed to the user, not a handoff to SYSTEM and back.
+    events = [
+        _event(offset_seconds=0),
+        _event(offset_seconds=10, principal="NT AUTHORITY\\SYSTEM"),
+        _event(offset_seconds=20, principal="CORP\\WIN-ACCT-07$"),
+        _event(offset_seconds=30),
+    ]
+    [episode] = cluster_events(events).episodes
+    assert episode.principal == "CORP\\jdoe"
+
+
+def test_system_account_does_not_bridge_two_different_actors() -> None:
+    events = [
+        _event(offset_seconds=0),
+        _event(offset_seconds=10, principal="NT AUTHORITY\\SYSTEM"),
+        _event(offset_seconds=20, principal="CORP\\svc-backup"),
+    ]
+    first, second = cluster_events(events).episodes
+    assert (first.principal, second.principal) == ("CORP\\jdoe", "CORP\\svc-backup")
+
+
+def test_system_only_episode_is_attributed_to_its_system_account() -> None:
+    [episode] = cluster_events(
+        [
+            _event(offset_seconds=0, principal="NT AUTHORITY\\SYSTEM"),
+            _event(offset_seconds=5, principal=None),
+        ]
+    ).episodes
+    assert episode.principal == "NT AUTHORITY\\SYSTEM"
+
+
+def test_is_system_principal() -> None:
+    for principal in (
+        "NT AUTHORITY\\SYSTEM",
+        "system",
+        "NT AUTHORITY\\LOCAL SERVICE",
+        "NT AUTHORITY\\NETWORK SERVICE",
+        "LocalSystem",
+        "CORP\\WIN-ACCT-07$",
+    ):
+        assert is_system_principal(principal), principal
+    assert not is_system_principal(None)
+    for account in ("CORP\\jdoe", "CORP\\svc-backup", "systemadmin"):
+        assert not is_system_principal(account), account
+
+
 def test_episode_id_is_stable_across_runs() -> None:
     events = [_event(offset_seconds=0), _event(offset_seconds=15)]
     first = cluster_events(events).episodes
@@ -190,38 +239,48 @@ def test_scenario_clusters_sensibly(tmp_path: Path) -> None:
     for episode in result.episodes:
         hosts = {by_id[eid].host for eid in episode.event_ids}
         assert len(hosts) == 1
-        # An episode carries at most one distinct account (a DOMAIN\\user and the
-        # same bare user are the same actor, so they do not count as two).
+        # An episode carries at most one distinct user or service account (a
+        # DOMAIN\\user and the same bare user are one actor). Operating-system
+        # accounts interleave with everything and never count as an actor.
         principals = [by_id[eid].principal for eid in episode.event_ids]
-        accounts = {p.rsplit("\\", 1)[-1].lower() for p in principals if p is not None}
+        accounts = {
+            p.rsplit("\\", 1)[-1].lower()
+            for p in principals
+            if p is not None and not is_system_principal(p)
+        }
         assert len(accounts) <= 1
 
-    # The benign morning logon (well before the intrusion) is its own episode,
-    # separated from the first intrusion event by far more than the gap window.
-    episode_of = {eid: ep.episode_id for ep in result.episodes for eid in ep.event_ids}
-    morning = next(e for e in events if e.datetime == "2026-03-14T08:30:05Z")
-    first_intrusion = next(e for e in events if e.datetime == "2026-03-14T08:42:17Z")
-    assert episode_of[morning.event_id] != episode_of[first_intrusion.event_id]
+    episode_of = {eid: ep for ep in result.episodes for eid in ep.event_ids}
 
-    # The dense workstation intrusion burst (08:42 to 08:48) is one episode, even
-    # though several of its events carry a null principal: unattributed events do
-    # not fragment a coherent run.
-    burst = [
-        e
+    def episode_at(host: str, when: str) -> Episode:
+        event = next(e for e in events if e.host == host and e.datetime == when)
+        return episode_of[event.event_id]
+
+    # The workstation intrusion burst (08:42 to 08:48) is one episode: jdoe's
+    # session, opened by the 08:30 interactive logon.
+    burst = {
+        episode_of[e.event_id].episode_id
         for e in events
-        if "2026-03-14T08:42:17Z" <= e.datetime <= "2026-03-14T08:48:22Z"
-        and e.host == "WIN-ACCT-07"
-    ]
-    burst_episodes = {episode_of[e.event_id] for e in burst}
-    assert len(burst_episodes) == 1
+        if e.host == "WIN-ACCT-07"
+        and "2026-03-14T08:42:17Z" <= e.datetime <= "2026-03-14T08:48:22Z"
+    }
+    assert len(burst) == 1
+    workstation = episode_at("WIN-ACCT-07", "2026-03-14T08:42:17Z")
+    assert workstation.principal == "CORP\\jdoe"
+    assert episode_at("WIN-ACCT-07", "2026-03-14T08:30:05Z") is workstation
 
-    # The file-server activity (one actor, svc-backup, spelled with and without its
-    # domain, plus interleaved unattributed events) clusters into a single episode.
-    server_events = [e for e in events if e.host == "WIN-FILE-02"]
-    server_episodes = {episode_of[e.event_id] for e in server_events}
-    assert len(server_episodes) == 1
-    server_episode = next(ep for ep in result.episodes if ep.host == "WIN-FILE-02")
-    assert server_episode.principal == "CORP\\svc-backup"
+    # On the file server, the intrusion (svc-backup, 08:55 to 09:10) is one episode,
+    # including the SYSTEM process its malicious service launched, and it is kept
+    # apart from the earlier maintenance by it-admin and from the benign update
+    # service installed between them.
+    intrusion = episode_at("WIN-FILE-02", "2026-03-14T08:55:03Z")
+    assert intrusion.principal == "CORP\\svc-backup"
+    for when in ("2026-03-14T08:56:43Z", "2026-03-14T09:02:15Z", "2026-03-14T09:10:17Z"):
+        assert episode_at("WIN-FILE-02", when) is intrusion
+    maintenance = episode_at("WIN-FILE-02", "2026-03-14T08:22:17Z")
+    assert maintenance.principal == "CORP\\it-admin"
+    assert maintenance is not intrusion
+    assert episode_at("WIN-FILE-02", "2026-03-14T08:33:57Z") not in (maintenance, intrusion)
 
 
 def test_subsecond_events_order_chronologically_not_lexicographically() -> None:

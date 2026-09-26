@@ -18,17 +18,24 @@ The grouping rule, stated precisely so it is auditable:
 
   3. Principal proximity: a new episode also starts on a principal handoff, that
      is when an attributed event names a different account than the run's current
-     actor. The current actor is the most recent named (non-null) account in the
-     run, not just the immediately previous event, so an unattributed event between
-     two different actors does not bridge them into one episode. Accounts are
+     actor. The current actor is the most recent named account in the run, not
+     just the immediately previous event, so an unattributed event between two
+     different actors does not bridge them into one episode. Accounts are
      compared on the bare account name (the segment after any ``DOMAIN\\`` prefix,
      case insensitively), so the same actor spelled ``CORP\\jdoe`` on one record
-     and ``jdoe`` on another is treated as one actor, not a handoff. An
-     unattributed event (a null principal, common on a raw telemetry record) never
-     forces a split on its own: it joins the surrounding run rather than
-     fragmenting a coherent burst of one actor's activity. The effect is that an
-     episode carries at most one distinct account, while a different actor on the
-     same host opens a new episode even with no time gap.
+     and ``jdoe`` on another is treated as one actor, not a handoff.
+
+     Two kinds of event never force a split on their own and never change the
+     run's current actor: an unattributed event (a null principal, common on raw
+     telemetry), and an event attributed to the operating system itself (``NT
+     AUTHORITY\\SYSTEM``, ``LOCAL SERVICE``, ``NETWORK SERVICE``, or a machine
+     account ending in ``$``). System activity interleaves with everything a user
+     does, and a service an attacker installed runs as SYSTEM, so treating it as a
+     handoff would cut one actor's activity into fragments. The effect is that an
+     episode carries at most one distinct user or service account, while a
+     different such account on the same host opens a new episode even with no
+     time gap. An episode made only of system activity is attributed to the
+     system account when there is exactly one.
 
 The episode id is a stable content hash of the sorted member event ids, so the
 same membership always yields the same id and the id is an unforgeable handle to
@@ -63,6 +70,7 @@ __all__ = [
     "Episode",
     "cluster_events",
     "episode_id_for_tag",
+    "is_system_principal",
 ]
 
 # How long a quiet gap, in seconds, ends one episode and starts the next within a
@@ -92,9 +100,10 @@ class Episode:
 
     ``episode_id`` is the stable ``EP-<short hash>`` handle derived from the
     sorted member event ids. ``host`` is the shared host. ``principal`` is the
-    episode's single distinct named principal, or None when its members were all
-    unattributed. ``start`` and ``end`` are the first and last member datetimes
-    (canonical UTC). ``event_ids`` are the member event ids in chronological order.
+    episode's single user or service account, or its single system account when
+    it holds only system activity, or None when no one account can be named.
+    ``start`` and ``end`` are the first and last member datetimes (canonical UTC).
+    ``event_ids`` are the member event ids in chronological order.
     """
 
     episode_id: str
@@ -164,26 +173,61 @@ def _group_key(event: Event) -> str:
     return event.host if event.host is not None else _UNATTRIBUTED
 
 
+# Accounts that are the operating system acting on its own behalf. Compared on the
+# bare account name, case-insensitively; a machine account (ending in "$") is
+# recognized separately.
+_SYSTEM_ACCOUNTS = frozenset({"system", "local service", "network service", "localsystem"})
+
+
 def _account(principal: str) -> str:
     """The bare account name used to compare principals: the part after DOMAIN\\."""
     return principal.rsplit("\\", 1)[-1].lower()
 
 
-def _episode_principal(events: list[Event]) -> str | None:
-    """The episode's representative principal, or None when every member is null.
+def is_system_principal(principal: str | None) -> bool:
+    """True for an account that is the operating system itself, not a user or service.
 
-    By the split rule an episode carries at most one distinct account. The most
-    qualified spelling is preferred (one carrying a ``DOMAIN\\`` prefix over a bare
-    account name) so the report shows the fullest available attribution.
+    ``NT AUTHORITY\\SYSTEM``, ``LOCAL SERVICE``, ``NETWORK SERVICE``, and machine
+    accounts (``CORP\\WIN-ACCT-07$``) run on every host all the time, so they do not
+    attribute activity to an actor for clustering purposes.
+    """
+    if principal is None:
+        return False
+    account = _account(principal)
+    return account in _SYSTEM_ACCOUNTS or account.endswith("$")
+
+
+def _attributing_account(principal: str | None) -> str | None:
+    """The account an event attributes activity to, or None for null or system."""
+    if principal is None or is_system_principal(principal):
+        return None
+    return _account(principal)
+
+
+def _representative(principals: list[str]) -> str | None:
+    """One spelling for a set of principals naming a single account, or None.
+
+    The most qualified spelling is preferred (one carrying a ``DOMAIN\\`` prefix
+    over a bare account name) so the report shows the fullest attribution.
+    """
+    if not principals or len({_account(principal) for principal in principals}) != 1:
+        return None
+    qualified = [principal for principal in principals if "\\" in principal]
+    return qualified[0] if qualified else principals[0]
+
+
+def _episode_principal(events: list[Event]) -> str | None:
+    """The episode's representative principal, or None when none can be named.
+
+    By the split rule an episode carries at most one distinct user or service
+    account, which is its principal. An episode of system activity only is
+    attributed to its system account when there is exactly one.
     """
     named = [event.principal for event in events if event.principal is not None]
-    if not named:
-        return None
-    accounts = {_account(principal) for principal in named}
-    if len(accounts) != 1:
-        return None
-    qualified = [principal for principal in named if "\\" in principal]
-    return qualified[0] if qualified else named[0]
+    actors = [principal for principal in named if not is_system_principal(principal)]
+    if actors:
+        return _representative(actors)
+    return _representative(named)
 
 
 def _split_into_episodes(events: list[Event], max_gap_seconds: int) -> list[Episode]:
@@ -191,8 +235,9 @@ def _split_into_episodes(events: list[Event], max_gap_seconds: int) -> list[Epis
 
     A new episode begins on a time gap beyond ``max_gap_seconds`` (time proximity)
     or on a principal handoff: an attributed event whose account differs from the
-    run's current actor, the most recent named account in the run. A null principal
-    never opens an episode on its own and never changes the run's current actor.
+    run's current actor, the most recent attributing account in the run. A null or
+    system principal never opens an episode on its own and never changes the run's
+    current actor.
     """
     episodes: list[Episode] = []
     run: list[Event] = []
@@ -216,7 +261,7 @@ def _split_into_episodes(events: list[Event], max_gap_seconds: int) -> list[Epis
 
     for event in events:
         moment = _parse_utc(event.datetime)
-        account = _account(event.principal) if event.principal is not None else None
+        account = _attributing_account(event.principal)
 
         gapped = (
             previous_time is not None and (moment - previous_time).total_seconds() > max_gap_seconds

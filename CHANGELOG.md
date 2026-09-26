@@ -95,6 +95,9 @@ failing.
   indicators, and paths differing only in case collapse.
 - Rejection details show Windows accounts as written, not repr-escaped.
 - Phrasing never re-cases or trims evidence.
+- The gate runs detect-secrets through its own interpreter, so a virtualenv that
+  is not activated no longer drops to the built-in fallback scan; the fallback,
+  when it does run, says so.
 - Everything listed below, which landed after 0.1.0:
   - Verification: rejection details no longer quote the cited event's own field
     values, so a cloud revision round cannot leak what redaction stripped (FR36).

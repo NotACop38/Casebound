@@ -26,10 +26,10 @@ Exit code is 0 only if every step passes.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
-import shutil
 import subprocess  # nosec B404
 import sys
 import tempfile
@@ -161,7 +161,10 @@ def _builtin_secret_scan(files: list[Path]) -> bool:
         for finding in findings:
             print(f"  - {finding}")
         return False
-    print(f"PASS (built-in scan, {len(files)} files)")
+    print(
+        f"PASS (built-in fallback scan, {len(files)} files; "
+        "detect-secrets is not installed for this interpreter)"
+    )
     return True
 
 
@@ -194,14 +197,23 @@ def check_secrets() -> bool:
     """Scan tracked files for secrets, preferring detect-secrets when available."""
     _print_header("secrets (secret scan)")
     files = _git_tracked_files()
-    if shutil.which("detect-secrets-hook") and BASELINE.exists():
+    # Resolve detect-secrets through the interpreter running the gate, like every
+    # other tool here, so an unactivated virtualenv still gets the full scan rather
+    # than whatever is (or is not) on PATH.
+    if importlib.util.find_spec("detect_secrets") is not None and BASELINE.exists():
         # Pass the baseline as a repo-relative path so it matches its own entry in
         # the file list below (the subprocess runs with cwd=ROOT). With an absolute
         # path the hook does not recognize the baseline among the scanned files and
         # scans it as ordinary content, flagging the hashed_secret values it stores.
-        cmd = ["detect-secrets-hook", "--baseline", str(BASELINE.relative_to(ROOT))]
+        cmd = [
+            sys.executable,
+            "-m",
+            "detect_secrets.pre_commit_hook",
+            "--baseline",
+            str(BASELINE.relative_to(ROOT)),
+        ]
         cmd.extend(str(p.relative_to(ROOT)) for p in files)
-        # Fixed tool name plus tracked file paths; no shell, no untrusted input.
+        # Fixed module name plus tracked file paths; no shell, no untrusted input.
         result = subprocess.run(cmd, cwd=ROOT)  # nosec B603
         ok = result.returncode == 0
         print("PASS (detect-secrets)" if ok else f"FAIL (exit {result.returncode})")
